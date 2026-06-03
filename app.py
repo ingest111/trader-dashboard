@@ -7,13 +7,27 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 
-st.set_page_config(page_title="Deon's Trader Dashboard v15", layout="wide")
+# ============================================================
+# DEON'S TRADER DASHBOARD v16
+# v15 + Expanded Universe Scanner + Top Opportunities Engine
+# ============================================================
+
+st.set_page_config(page_title="Deon's Trader Dashboard v16", layout="wide")
 
 DEFAULT_WATCHLIST = ["NVDA", "MRVL", "CRDO", "MU", "TSM", "AVGO", "PLTR", "AMD"]
+
+SCAN_UNIVERSE = [
+    "NVDA", "AMD", "AVGO", "ARM", "MU", "TSM", "MRVL", "CRDO",
+    "PLTR", "TEM", "APP", "HOOD", "HIMS", "SOFI", "RDDT",
+    "META", "AMZN", "MSFT", "GOOGL", "TSLA", "COIN", "MSTR",
+    "SMCI", "DELL", "ORCL", "CEG", "VRT", "ANET",
+]
+
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
+
 DAY_TRADE_CAPITAL_DEFAULT = 855
 RISK_PER_TRADE_DEFAULT = 0.03
-JOURNAL_FILE = "trade_journal_v15.csv"
+JOURNAL_FILE = "trade_journal_v16.csv"
 
 
 @st.cache_data(ttl=45)
@@ -98,7 +112,6 @@ def journal_report(journal):
 
     win_rate = len(wins) / len(journal) * 100 if len(journal) else 0
     avg_win = wins["P/L"].mean() if not wins.empty else 0
-    avg_loss = losses["P/L"].mean() if not losses.empty else 0
     profit_factor = wins["P/L"].sum() / abs(losses["P/L"].sum()) if not losses.empty else np.inf
 
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -127,23 +140,6 @@ def journal_report(journal):
     pattern_perf["Avg_PL"] = pattern_perf["Avg_PL"].round(2)
     pattern_perf["Win_Rate"] = pattern_perf["Win_Rate"].round(1)
     st.dataframe(pattern_perf, use_container_width=True)
-
-    st.subheader("Ticker Performance")
-    ticker_perf = (
-        journal.groupby("Ticker")
-        .agg(
-            Trades=("P/L", "count"),
-            Total_PL=("P/L", "sum"),
-            Avg_PL=("P/L", "mean"),
-            Win_Rate=("P/L", lambda x: (x > 0).mean() * 100),
-        )
-        .reset_index()
-        .sort_values("Total_PL", ascending=False)
-    )
-    ticker_perf["Total_PL"] = ticker_perf["Total_PL"].round(2)
-    ticker_perf["Avg_PL"] = ticker_perf["Avg_PL"].round(2)
-    ticker_perf["Win_Rate"] = ticker_perf["Win_Rate"].round(1)
-    st.dataframe(ticker_perf, use_container_width=True)
 
     st.subheader("Mistake Tracker")
     mistakes = journal[journal["Mistake"].astype(str).str.lower() != "none"]
@@ -463,6 +459,128 @@ def capital_allocation(row, cash_available, risk_per_trade):
     return round(shares, 4), round(position_value, 2), note
 
 
+def classify_pattern(snap, breakout, near_breakout, above20, above50):
+    if snap["Intraday Trend"] == "Bullish ORB":
+        return "Bullish ORB"
+    if snap["OR Zone"] == "Near breakout":
+        return "OR Breakout Watch"
+    if snap["Above VWAP"] and above20 and above50:
+        return "VWAP Continuation"
+    if breakout:
+        return "Daily Breakout"
+    if near_breakout:
+        return "Near Daily Breakout"
+    if snap["Intraday Trend"] in ["Weak intraday", "Bearish ORB"]:
+        return "Weak / Breakdown"
+    return "No Clear Pattern"
+
+
+def analyze_ticker(ticker, regime, regime_points):
+    daily = get_data(ticker, "3mo", "1d")
+    if daily.empty or len(daily) < 50:
+        return None
+
+    close = float(daily["Close"].iloc[-1])
+    ma20 = float(daily["Close"].rolling(20).mean().iloc[-1])
+    ma50 = float(daily["Close"].rolling(50).mean().iloc[-1])
+    high20 = float(daily["High"].rolling(20).max().iloc[-2])
+    low10 = float(daily["Low"].rolling(10).min().iloc[-1])
+
+    one_day = safe_pct_change(daily, 2)
+    five_day = safe_pct_change(daily, 6)
+    one_month = safe_pct_change(daily, 22)
+    avg_vol20 = float(daily["Volume"].rolling(20).mean().iloc[-1])
+    rel_vol = float(daily["Volume"].iloc[-1]) / avg_vol20 if avg_vol20 > 0 else np.nan
+    dist20 = ((close / ma20) - 1) * 100
+
+    above20 = close > ma20
+    above50 = close > ma50
+    near_breakout = abs((close / high20) - 1) * 100 <= 3
+    breakout = close > high20
+
+    stop = round(max(low10, close * 0.94), 2)
+    risk = close - stop
+    target1 = round(close * 1.05, 2)
+    target2 = round(close * 1.10, 2)
+    rr = ((target2 - close) / risk) if risk > 0 else np.nan
+
+    snap = intraday_snapshot(ticker)
+    pattern = classify_pattern(snap, breakout, near_breakout, above20, above50)
+
+    score = 0
+    if above20:
+        score += 10
+    if above50:
+        score += 10
+    if five_day > 3:
+        score += 10
+    if one_month > 8:
+        score += 10
+    if rel_vol >= 1.25:
+        score += 8
+    if near_breakout:
+        score += 10
+    if breakout:
+        score += 12
+    if snap["OR Zone"] in ["Near breakout", "Breakout"]:
+        score += 18
+    if snap["OR Zone"] == "Upper range":
+        score += 10
+    if snap["OR Zone"] in ["Near breakdown", "Breakdown"]:
+        score -= 20
+    if snap["Intraday Trend"] == "Bullish ORB":
+        score += 20
+    if snap["Intraday Trend"] == "Bearish ORB":
+        score -= 25
+    if snap["Above VWAP"]:
+        score += 8
+    if dist20 > 15:
+        score -= 12
+    if one_day > 8:
+        score -= 10
+
+    score += regime_points
+    score = max(0, min(100, round(score, 1)))
+
+    if score >= 75 and snap["OR Status"] == "Above OR High":
+        signal = "BUY NOW"
+    elif score >= 60 and snap["OR Zone"] == "Near breakout":
+        signal = "BUY ON OR BREAKOUT"
+    elif score >= 55:
+        signal = "WATCH"
+    else:
+        signal = "WAIT"
+    if snap["OR Status"] == "Below OR Low":
+        signal = "AVOID"
+
+    return {
+        "Signal": signal, "Ticker": ticker, "Pattern": pattern, "Price": round(close, 2),
+        "Today Trade Score": score, "Intraday Trend": snap["Intraday Trend"],
+        "OR Status": snap["OR Status"], "OR Zone": snap["OR Zone"], "OR Position": snap["OR Position"],
+        "Above VWAP": snap["Above VWAP"], "VWAP Approx": snap["VWAP Approx"],
+        "OR High": snap["OR High"], "OR Low": snap["OR Low"],
+        "1D %": round(one_day, 2), "5D %": round(five_day, 2), "1M %": round(one_month, 2),
+        "Rel Vol": round(rel_vol, 2), "20 MA": round(ma20, 2), "50 MA": round(ma50, 2),
+        "Dist 20MA %": round(dist20, 2), "Reward/Risk": round(rr, 2) if not np.isnan(rr) else np.nan,
+        "Stop": stop, "Target 1": target1, "Target 2": target2,
+    }
+
+
+def finalize_decision_board(df, regime, cash_available, risk_per_trade):
+    if df.empty:
+        return df
+    df = df.copy()
+    df["Probability %"] = df.apply(lambda row: probability_engine(row, regime), axis=1)
+    df["Setup Grade"] = df["Probability %"].apply(setup_grade)
+    df["Expected Value / Share"] = df.apply(expected_value_per_share, axis=1)
+    df["Kelly %"] = df.apply(kelly_fraction, axis=1)
+    allocations = df.apply(lambda row: capital_allocation(row, cash_available, risk_per_trade), axis=1)
+    df["Suggested Shares"] = [x[0] for x in allocations]
+    df["Suggested Position $"] = [x[1] for x in allocations]
+    df["Allocation Note"] = [x[2] for x in allocations]
+    return df.sort_values(["Expected Value / Share", "Probability %", "Today Trade Score"], ascending=False)
+
+
 def validate_trade(entry, stop, target, shares, regime, above_vwap, above_or_high, probability, already_traded_today, revenge_trade_risk):
     pass_reasons = []
     fail_reasons = []
@@ -612,126 +730,42 @@ def daily_trading_coach(regime, market_light, df):
             st.warning("Suggested position: $0. Wait for confirmation.")
 
 
-def classify_pattern(snap, breakout, near_breakout, above20, above50):
-    if snap["Intraday Trend"] == "Bullish ORB":
-        return "Bullish ORB"
-    if snap["OR Zone"] == "Near breakout":
-        return "OR Breakout Watch"
-    if snap["Above VWAP"] and above20 and above50:
-        return "VWAP Continuation"
-    if breakout:
-        return "Daily Breakout"
-    if near_breakout:
-        return "Near Daily Breakout"
-    if snap["Intraday Trend"] in ["Weak intraday", "Bearish ORB"]:
-        return "Weak / Breakdown"
-    return "No Clear Pattern"
+def premarket_scanner_section(scan_df, market_light):
+    st.header("Pre-Market / Live Opportunity Scanner v16")
+    st.caption("This scans a wider universe than the sidebar watchlist and ranks the strongest current setups.")
 
+    if scan_df.empty:
+        st.warning("No scanner data loaded.")
+        return
 
-def analyze_ticker(ticker, regime, regime_points):
-    daily = get_data(ticker, "3mo", "1d")
-    if daily.empty or len(daily) < 50:
-        return None
+    top = scan_df.head(10)
+    st.subheader("Top Opportunities")
+    st.dataframe(
+        top[[
+            "Ticker", "Signal", "Pattern", "Price", "Probability %", "Setup Grade",
+            "Expected Value / Share", "Today Trade Score", "Intraday Trend",
+            "OR Zone", "Above VWAP", "1D %", "5D %", "Rel Vol"
+        ]],
+        use_container_width=True,
+        height=360,
+    )
 
-    close = float(daily["Close"].iloc[-1])
-    ma20 = float(daily["Close"].rolling(20).mean().iloc[-1])
-    ma50 = float(daily["Close"].rolling(50).mean().iloc[-1])
-    high20 = float(daily["High"].rolling(20).max().iloc[-2])
-    low10 = float(daily["Low"].rolling(10).min().iloc[-1])
-
-    one_day = safe_pct_change(daily, 2)
-    five_day = safe_pct_change(daily, 6)
-    one_month = safe_pct_change(daily, 22)
-    avg_vol20 = float(daily["Volume"].rolling(20).mean().iloc[-1])
-    rel_vol = float(daily["Volume"].iloc[-1]) / avg_vol20 if avg_vol20 > 0 else np.nan
-    dist20 = ((close / ma20) - 1) * 100
-
-    above20 = close > ma20
-    above50 = close > ma50
-    near_breakout = abs((close / high20) - 1) * 100 <= 3
-    breakout = close > high20
-
-    stop = round(max(low10, close * 0.94), 2)
-    risk = close - stop
-    target1 = round(close * 1.05, 2)
-    target2 = round(close * 1.10, 2)
-    rr = ((target2 - close) / risk) if risk > 0 else np.nan
-
-    snap = intraday_snapshot(ticker)
-    pattern = classify_pattern(snap, breakout, near_breakout, above20, above50)
-
-    score = 0
-    if above20:
-        score += 10
-    if above50:
-        score += 10
-    if five_day > 3:
-        score += 10
-    if one_month > 8:
-        score += 10
-    if rel_vol >= 1.25:
-        score += 8
-    if near_breakout:
-        score += 10
-    if breakout:
-        score += 12
-    if snap["OR Zone"] in ["Near breakout", "Breakout"]:
-        score += 18
-    if snap["OR Zone"] == "Upper range":
-        score += 10
-    if snap["OR Zone"] in ["Near breakdown", "Breakdown"]:
-        score -= 20
-    if snap["Intraday Trend"] == "Bullish ORB":
-        score += 20
-    if snap["Intraday Trend"] == "Bearish ORB":
-        score -= 25
-    if snap["Above VWAP"]:
-        score += 8
-    if dist20 > 15:
-        score -= 12
-    if one_day > 8:
-        score -= 10
-
-    score += regime_points
-    score = max(0, min(100, round(score, 1)))
-
-    if score >= 75 and snap["OR Status"] == "Above OR High":
-        signal = "BUY NOW"
-    elif score >= 60 and snap["OR Zone"] == "Near breakout":
-        signal = "BUY ON OR BREAKOUT"
-    elif score >= 55:
-        signal = "WATCH"
+    avoid = scan_df[scan_df["Signal"] == "AVOID"].head(10)
+    st.subheader("Avoid / Weak Names")
+    if avoid.empty:
+        st.info("No avoid names from this scan.")
     else:
-        signal = "WAIT"
-    if snap["OR Status"] == "Below OR Low":
-        signal = "AVOID"
+        st.dataframe(
+            avoid[["Ticker", "Signal", "Pattern", "Price", "Intraday Trend", "OR Zone", "1D %", "Expected Value / Share"]],
+            use_container_width=True,
+        )
 
-    return {
-        "Signal": signal, "Ticker": ticker, "Pattern": pattern, "Price": round(close, 2),
-        "Today Trade Score": score, "Intraday Trend": snap["Intraday Trend"],
-        "OR Status": snap["OR Status"], "OR Zone": snap["OR Zone"], "OR Position": snap["OR Position"],
-        "Above VWAP": snap["Above VWAP"], "VWAP Approx": snap["VWAP Approx"],
-        "OR High": snap["OR High"], "OR Low": snap["OR Low"],
-        "1D %": round(one_day, 2), "5D %": round(five_day, 2), "1M %": round(one_month, 2),
-        "Rel Vol": round(rel_vol, 2), "20 MA": round(ma20, 2), "50 MA": round(ma50, 2),
-        "Dist 20MA %": round(dist20, 2), "Reward/Risk": round(rr, 2) if not np.isnan(rr) else np.nan,
-        "Stop": stop, "Target 1": target1, "Target 2": target2,
-    }
-
-
-def finalize_decision_board(df, regime, cash_available, risk_per_trade):
-    if df.empty:
-        return df
-    df = df.copy()
-    df["Probability %"] = df.apply(lambda row: probability_engine(row, regime), axis=1)
-    df["Setup Grade"] = df["Probability %"].apply(setup_grade)
-    df["Expected Value / Share"] = df.apply(expected_value_per_share, axis=1)
-    df["Kelly %"] = df.apply(kelly_fraction, axis=1)
-    allocations = df.apply(lambda row: capital_allocation(row, cash_available, risk_per_trade), axis=1)
-    df["Suggested Shares"] = [x[0] for x in allocations]
-    df["Suggested Position $"] = [x[1] for x in allocations]
-    df["Allocation Note"] = [x[2] for x in allocations]
-    return df.sort_values(["Expected Value / Share", "Probability %", "Today Trade Score"], ascending=False)
+    if market_light == "RED":
+        st.error("Scanner verdict: RED market. Treat all ideas as watchlist only unless an A+ confirmed breakout appears.")
+    elif len(top) and top.iloc[0]["Suggested Position $"] > 0:
+        st.success(f"Scanner verdict: Best deployable idea is {top.iloc[0]['Ticker']}.")
+    else:
+        st.warning("Scanner verdict: No clean deployable setup yet. Keep watching the top 3 only.")
 
 
 def make_chart(ticker, timeframe):
@@ -764,12 +798,15 @@ def make_chart(ticker, timeframe):
     return fig
 
 
-st.title("Deon's Trader Dashboard v15")
+st.title("Deon's Trader Dashboard v16")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
-watchlist_text = st.sidebar.text_area("Watchlist", ",".join(DEFAULT_WATCHLIST))
+watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST))
 symbols = [x.strip().upper() for x in watchlist_text.split(",") if x.strip()]
+
+scan_text = st.sidebar.text_area("Scanner Universe", ",".join(SCAN_UNIVERSE), height=180)
+scan_symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
 cash_available = st.sidebar.number_input("Cash available", min_value=0.0, value=float(DAY_TRADE_CAPITAL_DEFAULT), step=25.0)
 risk_per_trade = st.sidebar.number_input("Risk per trade %", min_value=0.5, max_value=10.0, value=float(RISK_PER_TRADE_DEFAULT * 100), step=0.5) / 100
@@ -794,7 +831,7 @@ elif market_light == "RED":
 else:
     st.info(f"Unknown Market Status - {regime_text}")
 
-st.header("Decision Board v15")
+st.header("Manual Watchlist Decision Board v16")
 rows = []
 for symbol in symbols:
     result = analyze_ticker(symbol, regime, regime_points)
@@ -803,7 +840,7 @@ for symbol in symbols:
 
 df = pd.DataFrame(rows)
 if df.empty:
-    st.error("No market data loaded yet. Try Refresh, check your internet connection, or reduce the watchlist.")
+    st.error("No manual watchlist data loaded. Try Refresh, check internet, or reduce the watchlist.")
     st.stop()
 
 df = finalize_decision_board(df, regime, cash_available, risk_per_trade)
@@ -818,9 +855,25 @@ display_cols = [
 ]
 st.dataframe(df[display_cols], use_container_width=True, height=500)
 
-coach_tab, journal_tab, upload_tab, simulator_tab, chart_tab = st.tabs(
-    ["Pre-Trade Validator", "Trade Journal", "Robinhood CSV Upload", "Trade Simulator", "Charts"]
+scan_tab, coach_tab, journal_tab, upload_tab, simulator_tab, chart_tab = st.tabs(
+    ["Opportunity Scanner", "Pre-Trade Validator", "Trade Journal", "Robinhood CSV Upload", "Trade Simulator", "Charts"]
 )
+
+with scan_tab:
+    with st.spinner("Scanning expanded universe..."):
+        scan_rows = []
+        seen = set()
+        for symbol in scan_symbols:
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            result = analyze_ticker(symbol, regime, regime_points)
+            if result:
+                scan_rows.append(result)
+        scan_df = pd.DataFrame(scan_rows)
+        if not scan_df.empty:
+            scan_df = finalize_decision_board(scan_df, regime, cash_available, risk_per_trade)
+    premarket_scanner_section(scan_df if "scan_df" in locals() else pd.DataFrame(), market_light)
 
 with coach_tab:
     trade_validator_section(regime)
