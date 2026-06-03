@@ -7,45 +7,24 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 
-# ============================================================
-# DEON'S TRADER DASHBOARD v14
-# v13 + Trade Journal + Pattern Performance Tracker
-# ============================================================
-
-st.set_page_config(page_title="Deon's Trader Dashboard v14", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v15", layout="wide")
 
 DEFAULT_WATCHLIST = ["NVDA", "MRVL", "CRDO", "MU", "TSM", "AVGO", "PLTR", "AMD"]
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
-
 DAY_TRADE_CAPITAL_DEFAULT = 855
 RISK_PER_TRADE_DEFAULT = 0.03
+JOURNAL_FILE = "trade_journal_v15.csv"
 
-JOURNAL_FILE = "trade_journal_v14.csv"
-
-
-# ============================================================
-# DATA HELPERS
-# ============================================================
 
 @st.cache_data(ttl=45)
 def get_data(ticker, period="3mo", interval="1d"):
     try:
-        df = yf.download(
-            ticker,
-            period=period,
-            interval=interval,
-            progress=False,
-            auto_adjust=True,
-        )
-
+        df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
         if df.empty:
             return pd.DataFrame()
-
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-
         return df.dropna()
-
     except Exception:
         return pd.DataFrame()
 
@@ -53,7 +32,6 @@ def get_data(ticker, period="3mo", interval="1d"):
 def safe_pct_change(df, bars):
     if df.empty or len(df) <= bars:
         return np.nan
-
     try:
         return ((df["Close"].iloc[-1] / df["Close"].iloc[-bars]) - 1) * 100
     except Exception:
@@ -63,11 +41,9 @@ def safe_pct_change(df, bars):
 def clean_money(x):
     if pd.isna(x):
         return 0.0
-
     s = str(x).replace("$", "").replace(",", "").strip()
     is_negative = "(" in s and ")" in s
     s = s.replace("(", "").replace(")", "")
-
     try:
         value = float(s)
         return -value if is_negative else value
@@ -78,37 +54,18 @@ def clean_money(x):
 def clean_number(x):
     if pd.isna(x):
         return 0.0
-
     try:
         return float(str(x).replace(",", "").strip())
     except ValueError:
         return 0.0
 
 
-# ============================================================
-# JOURNAL HELPERS
-# ============================================================
-
 def empty_journal():
-    return pd.DataFrame(
-        columns=[
-            "Date",
-            "Ticker",
-            "Pattern",
-            "Setup Grade",
-            "Signal",
-            "Market Regime",
-            "Entry",
-            "Exit",
-            "Stop",
-            "Shares",
-            "P/L",
-            "Return %",
-            "Result",
-            "Mistake",
-            "Notes",
-        ]
-    )
+    return pd.DataFrame(columns=[
+        "Date", "Ticker", "Pattern", "Setup Grade", "Signal", "Market Regime",
+        "Entry", "Exit", "Stop", "Target", "Shares", "P/L", "Return %",
+        "Result", "Mistake", "Pre-Trade Screenshot", "Exit Screenshot", "Notes",
+    ])
 
 
 def load_journal():
@@ -117,7 +74,6 @@ def load_journal():
             return pd.read_csv(JOURNAL_FILE)
         except Exception:
             return empty_journal()
-
     return empty_journal()
 
 
@@ -139,7 +95,6 @@ def journal_report(journal):
     total_pnl = journal["P/L"].sum()
     wins = journal[journal["P/L"] > 0]
     losses = journal[journal["P/L"] < 0]
-    breakeven = journal[journal["P/L"] == 0]
 
     win_rate = len(wins) / len(journal) * 100 if len(journal) else 0
     avg_win = wins["P/L"].mean() if not wins.empty else 0
@@ -151,13 +106,12 @@ def journal_report(journal):
     c2.metric("Win Rate", f"{win_rate:.1f}%")
     c3.metric("Trades", len(journal))
     c4.metric("Avg Win", f"${avg_win:,.2f}")
-    c5.metric("Profit Factor", "∞" if profit_factor == np.inf else f"{profit_factor:.2f}")
+    c5.metric("Profit Factor", "infinity" if profit_factor == np.inf else f"{profit_factor:.2f}")
 
     st.subheader("Journal Entries")
     st.dataframe(journal.sort_values("Date", ascending=False), use_container_width=True)
 
     st.subheader("Pattern Performance")
-
     pattern_perf = (
         journal.groupby("Pattern")
         .agg(
@@ -169,15 +123,12 @@ def journal_report(journal):
         .reset_index()
         .sort_values("Total_PL", ascending=False)
     )
-
     pattern_perf["Total_PL"] = pattern_perf["Total_PL"].round(2)
     pattern_perf["Avg_PL"] = pattern_perf["Avg_PL"].round(2)
     pattern_perf["Win_Rate"] = pattern_perf["Win_Rate"].round(1)
-
     st.dataframe(pattern_perf, use_container_width=True)
 
     st.subheader("Ticker Performance")
-
     ticker_perf = (
         journal.groupby("Ticker")
         .agg(
@@ -189,54 +140,35 @@ def journal_report(journal):
         .reset_index()
         .sort_values("Total_PL", ascending=False)
     )
-
     ticker_perf["Total_PL"] = ticker_perf["Total_PL"].round(2)
     ticker_perf["Avg_PL"] = ticker_perf["Avg_PL"].round(2)
     ticker_perf["Win_Rate"] = ticker_perf["Win_Rate"].round(1)
-
     st.dataframe(ticker_perf, use_container_width=True)
 
     st.subheader("Mistake Tracker")
-
     mistakes = journal[journal["Mistake"].astype(str).str.lower() != "none"]
-
     if mistakes.empty:
         st.success("No recorded mistakes yet.")
     else:
         mistake_perf = (
             mistakes.groupby("Mistake")
-            .agg(
-                Count=("P/L", "count"),
-                Total_PL=("P/L", "sum"),
-                Avg_PL=("P/L", "mean"),
-            )
+            .agg(Count=("P/L", "count"), Total_PL=("P/L", "sum"), Avg_PL=("P/L", "mean"))
             .reset_index()
             .sort_values("Total_PL", ascending=True)
         )
-
         mistake_perf["Total_PL"] = mistake_perf["Total_PL"].round(2)
         mistake_perf["Avg_PL"] = mistake_perf["Avg_PL"].round(2)
-
         st.dataframe(mistake_perf, use_container_width=True)
 
 
-# ============================================================
-# TRADE HISTORY AUDIT
-# ============================================================
-
 def trade_history_audit(uploaded_file):
     try:
-        raw = pd.read_csv(
-            uploaded_file,
-            engine="python",
-            on_bad_lines="skip",
-        )
+        raw = pd.read_csv(uploaded_file, engine="python", on_bad_lines="skip")
     except Exception as e:
         st.error(f"Could not read CSV: {e}")
         return None
 
     raw.columns = [str(col).strip() for col in raw.columns]
-
     required_cols = ["Activity Date", "Instrument", "Trans Code", "Quantity", "Price", "Amount"]
     missing_cols = [col for col in required_cols if col not in raw.columns]
 
@@ -253,27 +185,21 @@ def trade_history_audit(uploaded_file):
     df["Instrument"] = df["Instrument"].astype(str).str.strip()
 
     trades = df[df["Trans Code"].isin(["Buy", "Sell"])].copy()
-
     if trades.empty:
         st.warning("No Buy/Sell trades found in the uploaded file.")
         return None
 
     rows = []
-
     for ticker, group in trades.groupby("Instrument"):
         buys = group[group["Trans Code"] == "Buy"]
         sells = group[group["Trans Code"] == "Sell"]
-
         buy_cost = abs(buys["Amount Clean"].sum())
         sell_proceeds = sells["Amount Clean"].sum()
-
         buy_qty = buys["Quantity Clean"].sum()
         sell_qty = sells["Quantity Clean"].sum()
         net_qty = buy_qty - sell_qty
-
         pnl = sell_proceeds - buy_cost
         return_pct = (pnl / buy_cost * 100) if buy_cost > 0 else np.nan
-
         rows.append({
             "Ticker": ticker,
             "Status": "Closed" if abs(net_qty) < 0.0001 else "Open / Partial",
@@ -288,56 +214,38 @@ def trade_history_audit(uploaded_file):
         })
 
     summary = pd.DataFrame(rows).sort_values("P/L", ascending=False)
-
     total_buy_cost = summary["Buy Cost"].sum()
     total_pnl = summary["P/L"].sum()
     total_return = (total_pnl / total_buy_cost * 100) if total_buy_cost > 0 else 0
-
     winners = summary[summary["P/L"] > 0]
     losers = summary[summary["P/L"] < 0]
-
     win_rate = (len(winners) / len(summary) * 100) if len(summary) else 0
     avg_win = winners["P/L"].mean() if not winners.empty else 0
-    avg_loss = losers["P/L"].mean() if not losers.empty else 0
-    profit_factor = (
-        winners["P/L"].sum() / abs(losers["P/L"].sum())
-        if not losers.empty
-        else np.inf
-    )
+    profit_factor = winners["P/L"].sum() / abs(losers["P/L"].sum()) if not losers.empty else np.inf
 
     st.header("Uploaded Robinhood CSV Audit")
-
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total P/L", f"${total_pnl:,.2f}")
     col2.metric("Total Return", f"{total_return:.2f}%")
     col3.metric("Win Rate", f"{win_rate:.1f}%")
     col4.metric("Avg Winner", f"${avg_win:,.2f}")
-    col5.metric("Profit Factor", "∞" if profit_factor == np.inf else f"{profit_factor:.2f}")
-
+    col5.metric("Profit Factor", "infinity" if profit_factor == np.inf else f"{profit_factor:.2f}")
     st.dataframe(summary, use_container_width=True)
-
+    st.caption("Note: CSV audit may overstate P/L when the uploaded range contains sells without matching buys.")
     return summary
 
 
-# ============================================================
-# MARKET CONTEXT
-# ============================================================
-
 def market_context():
     rows = []
-
     for ticker in MARKETS:
         df = get_data(ticker, "5d", "1d")
-
         if df.empty:
             continue
-
         rows.append({
             "Market": ticker,
             "Price": round(float(df["Close"].iloc[-1]), 2),
             "1D %": round(safe_pct_change(df, 2), 2),
         })
-
     return pd.DataFrame(rows)
 
 
@@ -353,40 +261,23 @@ def get_market_regime(market_df):
     qqq_val = qqq[0] if len(qqq) > 0 else 0
     vix_val = vix[0] if len(vix) > 0 else 0
 
-    spy_pos = spy_val > 0
-    qqq_pos = qqq_val > 0
-    vix_up = vix_val > 0
-
-    if spy_pos and qqq_pos and not vix_up:
+    if spy_val > 0 and qqq_val > 0 and vix_val <= 0:
         return "Bullish", "SPY positive, QQQ positive, VIX calm", 8, "GREEN"
-
-    if spy_pos and qqq_pos and vix_up:
+    if spy_val > 0 and qqq_val > 0 and vix_val > 0:
         return "Mixed", "SPY positive, QQQ positive, but VIX rising", 0, "YELLOW"
-
     return "Defensive", "Weak index backdrop or elevated volatility", -12, "RED"
 
 
-# ============================================================
-# OPENING RANGE / INTRADAY ENGINE
-# ============================================================
-
 def intraday_snapshot(ticker):
     intraday = get_data(ticker, "1d", "5m")
-
     if intraday.empty or len(intraday) < 3:
         return {
-            "Intraday Trend": "Unknown",
-            "OR High": np.nan,
-            "OR Low": np.nan,
-            "OR Status": "Unknown",
-            "OR Position": np.nan,
-            "OR Zone": "Unknown",
-            "Above VWAP": False,
-            "VWAP Approx": np.nan,
+            "Intraday Trend": "Unknown", "OR High": np.nan, "OR Low": np.nan,
+            "OR Status": "Unknown", "OR Position": np.nan, "OR Zone": "Unknown",
+            "Above VWAP": False, "VWAP Approx": np.nan,
         }
 
     current = float(intraday["Close"].iloc[-1])
-
     typical = (intraday["High"] + intraday["Low"] + intraday["Close"]) / 3
     total_volume = intraday["Volume"].sum()
     vwap = float((typical * intraday["Volume"]).sum() / total_volume) if total_volume > 0 else current
@@ -395,7 +286,6 @@ def intraday_snapshot(ticker):
     or_high = float(opening_range["High"].max())
     or_low = float(opening_range["Low"].min())
     or_range = or_high - or_low
-
     or_position = (current - or_low) / or_range if or_range > 0 else np.nan
 
     if current > or_high:
@@ -434,20 +324,12 @@ def intraday_snapshot(ticker):
         trend = "Choppy"
 
     return {
-        "Intraday Trend": trend,
-        "OR High": round(or_high, 2),
-        "OR Low": round(or_low, 2),
+        "Intraday Trend": trend, "OR High": round(or_high, 2), "OR Low": round(or_low, 2),
         "OR Status": or_status,
         "OR Position": round(or_position, 2) if not np.isnan(or_position) else np.nan,
-        "OR Zone": or_zone,
-        "Above VWAP": above_vwap,
-        "VWAP Approx": round(vwap, 2),
+        "OR Zone": or_zone, "Above VWAP": above_vwap, "VWAP Approx": round(vwap, 2),
     }
 
-
-# ============================================================
-# PROBABILITY, GRADING, EV, CAPITAL ALLOCATION
-# ============================================================
 
 def setup_grade(probability):
     if probability >= 80:
@@ -463,7 +345,6 @@ def setup_grade(probability):
 
 def probability_engine(row, regime):
     probability = 45
-
     if row["Signal"] == "BUY NOW":
         probability += 12
     elif row["Signal"] == "BUY ON OR BREAKOUT":
@@ -491,10 +372,7 @@ def probability_engine(row, regime):
     elif row["Intraday Trend"] == "Bearish ORB":
         probability -= 15
 
-    if row["Above VWAP"]:
-        probability += 6
-    else:
-        probability -= 4
+    probability += 6 if row["Above VWAP"] else -4
 
     if row["Reward/Risk"] >= 2:
         probability += 8
@@ -517,9 +395,7 @@ def probability_engine(row, regime):
     elif -2 <= row["Dist 20MA %"] <= 8:
         probability += 4
 
-    if row["1D %"] > 8:
-        probability -= 8
-    elif row["1D %"] < -3:
+    if row["1D %"] > 8 or row["1D %"] < -3:
         probability -= 8
 
     if regime == "Bullish":
@@ -535,75 +411,206 @@ def expected_value_per_share(row):
     stop = row["Stop"]
     target = row["Target 1"]
     probability = row["Probability %"] / 100
-
     if price <= 0 or stop <= 0 or target <= price or price <= stop:
         return 0.0
-
     reward = target - price
     risk = price - stop
-
-    ev = (probability * reward) - ((1 - probability) * risk)
-
-    return round(ev, 2)
+    return round((probability * reward) - ((1 - probability) * risk), 2)
 
 
 def kelly_fraction(row):
     probability = row["Probability %"] / 100
     rr = row["Reward/Risk"]
-
     if rr <= 0 or np.isnan(rr):
         return 0.0
-
     kelly = probability - ((1 - probability) / rr)
-    kelly = max(0.0, min(kelly, 0.25))
-
-    return round(kelly * 100, 2)
+    return round(max(0.0, min(kelly, 0.25)) * 100, 2)
 
 
 def capital_allocation(row, cash_available, risk_per_trade):
     if row["Setup Grade"] in ["No Trade", "C Setup"]:
         return 0.0, 0.0, "No edge"
-
     if row["Probability %"] < 60:
         return 0.0, 0.0, "Probability too low"
-
     if row["Expected Value / Share"] <= 0:
         return 0.0, 0.0, "Negative EV"
-
     if row["Signal"] not in ["BUY NOW", "BUY ON OR BREAKOUT"]:
         return 0.0, 0.0, "No entry trigger"
 
     price = row["Price"]
     stop = row["Stop"]
-
     if price <= 0 or stop <= 0 or price <= stop:
         return 0.0, 0.0, "Invalid risk"
 
     risk_dollars = cash_available * risk_per_trade
     risk_per_share = price - stop
-
     shares_by_risk = risk_dollars / risk_per_share
     shares_by_cash = cash_available / price
     shares = max(0, min(shares_by_risk, shares_by_cash))
     position_value = shares * price
 
     if row["Setup Grade"] == "A+ Setup":
-        allocation_note = "Max planned size"
+        note = "Max planned size"
     elif row["Setup Grade"] == "A Setup":
         position_value *= 0.75
         shares = position_value / price
-        allocation_note = "Three-quarter size"
+        note = "Three-quarter size"
     else:
         position_value *= 0.50
         shares = position_value / price
-        allocation_note = "Half size"
+        note = "Half size"
 
-    return round(shares, 4), round(position_value, 2), allocation_note
+    return round(shares, 4), round(position_value, 2), note
 
 
-# ============================================================
-# TICKER ANALYSIS
-# ============================================================
+def validate_trade(entry, stop, target, shares, regime, above_vwap, above_or_high, probability, already_traded_today, revenge_trade_risk):
+    pass_reasons = []
+    fail_reasons = []
+
+    if entry <= 0 or stop <= 0 or target <= 0:
+        fail_reasons.append("Entry, stop, and target must be above zero.")
+    elif stop >= entry:
+        fail_reasons.append("Stop must be below entry for a long trade.")
+    elif target <= entry:
+        fail_reasons.append("Target must be above entry for a long trade.")
+    else:
+        rr = (target - entry) / (entry - stop)
+        if rr >= 2:
+            pass_reasons.append(f"Reward/risk is strong at {rr:.2f}.")
+        elif rr >= 1.5:
+            pass_reasons.append(f"Reward/risk is acceptable at {rr:.2f}.")
+        else:
+            fail_reasons.append(f"Reward/risk is weak at {rr:.2f}. Minimum preferred is 1.5.")
+
+    if regime == "Defensive":
+        fail_reasons.append("Market is RED/Defensive. Only A+ setups should be considered.")
+    else:
+        pass_reasons.append("Market is not RED.")
+
+    if above_vwap:
+        pass_reasons.append("Price is above VWAP.")
+    else:
+        fail_reasons.append("Price is not above VWAP.")
+
+    if above_or_high:
+        pass_reasons.append("Price is above opening range high.")
+    else:
+        fail_reasons.append("No opening range breakout confirmation.")
+
+    if probability >= 70:
+        pass_reasons.append(f"Probability is strong at {probability}%.")
+    elif probability >= 60:
+        pass_reasons.append(f"Probability is acceptable at {probability}%.")
+    else:
+        fail_reasons.append(f"Probability is too low at {probability}%.")
+
+    if already_traded_today:
+        fail_reasons.append("You already traded today. Avoid overtrading.")
+    else:
+        pass_reasons.append("No prior trade recorded today.")
+
+    if revenge_trade_risk:
+        fail_reasons.append("Revenge trade risk is present.")
+    else:
+        pass_reasons.append("No revenge-trade flag.")
+
+    if shares <= 0:
+        fail_reasons.append("Shares must be greater than zero.")
+
+    return ("PASS" if not fail_reasons else "FAIL"), pass_reasons, fail_reasons
+
+
+def trade_validator_section(regime):
+    st.header("Pre-Trade Validator")
+    st.caption("Use this before entering a manual trade. It is designed to stop impulsive trades.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    ticker = c1.text_input("Ticker", value="")
+    entry = c2.number_input("Planned Entry", min_value=0.0, step=0.01)
+    stop = c3.number_input("Planned Stop", min_value=0.0, step=0.01)
+    target = c4.number_input("Planned Target", min_value=0.0, step=0.01)
+
+    c5, c6, c7, c8 = st.columns(4)
+    shares = c5.number_input("Planned Shares", min_value=0.0, step=0.0001, format="%.6f")
+    probability = c6.slider("Estimated Probability %", min_value=0, max_value=100, value=50, step=1)
+    above_vwap = c7.checkbox("Above VWAP?")
+    above_or_high = c8.checkbox("Above OR High?")
+
+    c9, c10 = st.columns(2)
+    already_traded_today = c9.checkbox("Already traded today?")
+    revenge_trade_risk = c10.checkbox("Revenge trade risk?")
+
+    if st.button("Validate Trade"):
+        verdict, pass_reasons, fail_reasons = validate_trade(
+            entry, stop, target, shares, regime, above_vwap, above_or_high,
+            probability, already_traded_today, revenge_trade_risk
+        )
+
+        if verdict == "PASS":
+            st.success("PASS: This trade meets the minimum rules.")
+        else:
+            st.error("FAIL: Do not take this trade yet.")
+
+        if entry > 0 and stop > 0 and target > 0 and entry > stop and target > entry:
+            risk = entry - stop
+            reward = target - entry
+            rr = reward / risk
+            planned_risk = risk * shares
+            planned_reward = reward * shares
+            ev = (probability / 100 * planned_reward) - ((1 - probability / 100) * planned_risk)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Risk/Share", f"${risk:.2f}")
+            k2.metric("Reward/Share", f"${reward:.2f}")
+            k3.metric("R/R", f"{rr:.2f}")
+            k4.metric("Expected Value", f"${ev:.2f}")
+
+        st.subheader("Pass Reasons")
+        for reason in pass_reasons:
+            st.write(f"Yes - {reason}")
+        if not pass_reasons:
+            st.write("None")
+
+        st.subheader("Fail Reasons")
+        for reason in fail_reasons:
+            st.write(f"No - {reason}")
+        if not fail_reasons:
+            st.write("None")
+
+
+def daily_trading_coach(regime, market_light, df):
+    st.header("Daily Trading Coach")
+    if market_light == "RED":
+        st.error("Today's mode: CAPITAL PRESERVATION")
+        st.write("Primary goal: protect cash. Do not force trades.")
+        st.write("Allowed trades: only A+ setups with positive expected value and confirmed breakout.")
+        st.write("Avoid: chasing, averaging down, buying below VWAP, and revenge trades.")
+    elif market_light == "YELLOW":
+        st.warning("Today's mode: SELECTIVE")
+        st.write("Primary goal: take only clean setups.")
+        st.write("Allowed trades: A or B setups with positive expected value.")
+        st.write("Avoid: low-volume moves and middle-of-range entries.")
+    elif market_light == "GREEN":
+        st.success("Today's mode: AGGRESSIVE BUT CONTROLLED")
+        st.write("Primary goal: take the best confirmed setups, not every setup.")
+        st.write("Allowed trades: A+, A, and strong B setups with defined stops.")
+        st.write("Avoid: oversized positions and late breakouts.")
+    else:
+        st.info("Today's mode: UNKNOWN")
+        st.write("Market data is incomplete. Trade smaller or wait.")
+
+    if df is not None and not df.empty:
+        best = df.iloc[0]
+        st.subheader("Best Current Candidate")
+        st.write(f"Ticker: **{best['Ticker']}**")
+        st.write(f"Signal: **{best['Signal']}**")
+        st.write(f"Pattern: **{best['Pattern']}**")
+        st.write(f"Probability: **{best['Probability %']}%**")
+        st.write(f"Expected Value / Share: **${best['Expected Value / Share']:.2f}**")
+        if best["Suggested Position $"] > 0:
+            st.success(f"Suggested position: ${best['Suggested Position $']:,.2f}")
+        else:
+            st.warning("Suggested position: $0. Wait for confirmation.")
+
 
 def classify_pattern(snap, breakout, near_breakout, above20, above50):
     if snap["Intraday Trend"] == "Bullish ORB":
@@ -623,24 +630,20 @@ def classify_pattern(snap, breakout, near_breakout, above20, above50):
 
 def analyze_ticker(ticker, regime, regime_points):
     daily = get_data(ticker, "3mo", "1d")
-
     if daily.empty or len(daily) < 50:
         return None
 
     close = float(daily["Close"].iloc[-1])
     ma20 = float(daily["Close"].rolling(20).mean().iloc[-1])
     ma50 = float(daily["Close"].rolling(50).mean().iloc[-1])
-
     high20 = float(daily["High"].rolling(20).max().iloc[-2])
     low10 = float(daily["Low"].rolling(10).min().iloc[-1])
 
     one_day = safe_pct_change(daily, 2)
     five_day = safe_pct_change(daily, 6)
     one_month = safe_pct_change(daily, 22)
-
     avg_vol20 = float(daily["Volume"].rolling(20).mean().iloc[-1])
     rel_vol = float(daily["Volume"].iloc[-1]) / avg_vol20 if avg_vol20 > 0 else np.nan
-
     dist20 = ((close / ma20) - 1) * 100
 
     above20 = close > ma20
@@ -650,17 +653,14 @@ def analyze_ticker(ticker, regime, regime_points):
 
     stop = round(max(low10, close * 0.94), 2)
     risk = close - stop
-
     target1 = round(close * 1.05, 2)
     target2 = round(close * 1.10, 2)
-
     rr = ((target2 - close) / risk) if risk > 0 else np.nan
 
     snap = intraday_snapshot(ticker)
     pattern = classify_pattern(snap, breakout, near_breakout, above20, above50)
 
     score = 0
-
     if above20:
         score += 10
     if above50:
@@ -675,21 +675,18 @@ def analyze_ticker(ticker, regime, regime_points):
         score += 10
     if breakout:
         score += 12
-
     if snap["OR Zone"] in ["Near breakout", "Breakout"]:
         score += 18
     if snap["OR Zone"] == "Upper range":
         score += 10
     if snap["OR Zone"] in ["Near breakdown", "Breakdown"]:
         score -= 20
-
     if snap["Intraday Trend"] == "Bullish ORB":
         score += 20
     if snap["Intraday Trend"] == "Bearish ORB":
         score -= 25
     if snap["Above VWAP"]:
         score += 8
-
     if dist20 > 15:
         score -= 12
     if one_day > 8:
@@ -706,68 +703,36 @@ def analyze_ticker(ticker, regime, regime_points):
         signal = "WATCH"
     else:
         signal = "WAIT"
-
     if snap["OR Status"] == "Below OR Low":
         signal = "AVOID"
 
     return {
-        "Signal": signal,
-        "Ticker": ticker,
-        "Pattern": pattern,
-        "Price": round(close, 2),
-        "Today Trade Score": score,
-        "Intraday Trend": snap["Intraday Trend"],
-        "OR Status": snap["OR Status"],
-        "OR Zone": snap["OR Zone"],
-        "OR Position": snap["OR Position"],
-        "Above VWAP": snap["Above VWAP"],
-        "VWAP Approx": snap["VWAP Approx"],
-        "OR High": snap["OR High"],
-        "OR Low": snap["OR Low"],
-        "1D %": round(one_day, 2),
-        "5D %": round(five_day, 2),
-        "1M %": round(one_month, 2),
-        "Rel Vol": round(rel_vol, 2),
-        "20 MA": round(ma20, 2),
-        "50 MA": round(ma50, 2),
-        "Dist 20MA %": round(dist20, 2),
-        "Reward/Risk": round(rr, 2) if not np.isnan(rr) else np.nan,
-        "Stop": stop,
-        "Target 1": target1,
-        "Target 2": target2,
+        "Signal": signal, "Ticker": ticker, "Pattern": pattern, "Price": round(close, 2),
+        "Today Trade Score": score, "Intraday Trend": snap["Intraday Trend"],
+        "OR Status": snap["OR Status"], "OR Zone": snap["OR Zone"], "OR Position": snap["OR Position"],
+        "Above VWAP": snap["Above VWAP"], "VWAP Approx": snap["VWAP Approx"],
+        "OR High": snap["OR High"], "OR Low": snap["OR Low"],
+        "1D %": round(one_day, 2), "5D %": round(five_day, 2), "1M %": round(one_month, 2),
+        "Rel Vol": round(rel_vol, 2), "20 MA": round(ma20, 2), "50 MA": round(ma50, 2),
+        "Dist 20MA %": round(dist20, 2), "Reward/Risk": round(rr, 2) if not np.isnan(rr) else np.nan,
+        "Stop": stop, "Target 1": target1, "Target 2": target2,
     }
 
 
 def finalize_decision_board(df, regime, cash_available, risk_per_trade):
     if df.empty:
         return df
-
     df = df.copy()
     df["Probability %"] = df.apply(lambda row: probability_engine(row, regime), axis=1)
     df["Setup Grade"] = df["Probability %"].apply(setup_grade)
     df["Expected Value / Share"] = df.apply(expected_value_per_share, axis=1)
     df["Kelly %"] = df.apply(kelly_fraction, axis=1)
-
-    allocations = df.apply(
-        lambda row: capital_allocation(row, cash_available, risk_per_trade),
-        axis=1,
-    )
-
+    allocations = df.apply(lambda row: capital_allocation(row, cash_available, risk_per_trade), axis=1)
     df["Suggested Shares"] = [x[0] for x in allocations]
     df["Suggested Position $"] = [x[1] for x in allocations]
     df["Allocation Note"] = [x[2] for x in allocations]
+    return df.sort_values(["Expected Value / Share", "Probability %", "Today Trade Score"], ascending=False)
 
-    df = df.sort_values(
-        ["Expected Value / Share", "Probability %", "Today Trade Score"],
-        ascending=False,
-    )
-
-    return df
-
-
-# ============================================================
-# CHARTING
-# ============================================================
 
 def make_chart(ticker, timeframe):
     if timeframe == "5m intraday":
@@ -787,158 +752,110 @@ def make_chart(ticker, timeframe):
     df["MA50"] = df["Close"].rolling(50).mean()
 
     fig = go.Figure()
-
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name=ticker,
-        )
-    )
-
+    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name=ticker))
     fig.add_trace(go.Scatter(x=df.index, y=df["MA20"], mode="lines", name="20 MA"))
     fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], mode="lines", name="50 MA"))
 
     if timeframe == "5m intraday" and len(df) >= 3:
-        fig.add_hline(
-            y=df.head(3)["High"].max(),
-            line_dash="dash",
-            annotation_text="OR High",
-        )
-        fig.add_hline(
-            y=df.head(3)["Low"].min(),
-            line_dash="dash",
-            annotation_text="OR Low",
-        )
+        fig.add_hline(y=df.head(3)["High"].max(), line_dash="dash", annotation_text="OR High")
+        fig.add_hline(y=df.head(3)["Low"].min(), line_dash="dash", annotation_text="OR Low")
 
     fig.update_layout(title=title, height=550, xaxis_rangeslider_visible=False)
-
     return fig
 
 
-# ============================================================
-# APP LAYOUT
-# ============================================================
-
-st.title("Deon's Trader Dashboard v14")
+st.title("Deon's Trader Dashboard v15")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
-
 watchlist_text = st.sidebar.text_area("Watchlist", ",".join(DEFAULT_WATCHLIST))
 symbols = [x.strip().upper() for x in watchlist_text.split(",") if x.strip()]
 
-cash_available = st.sidebar.number_input(
-    "Cash available",
-    min_value=0.0,
-    value=float(DAY_TRADE_CAPITAL_DEFAULT),
-    step=25.0,
-)
-
-risk_per_trade = st.sidebar.number_input(
-    "Risk per trade %",
-    min_value=0.5,
-    max_value=10.0,
-    value=float(RISK_PER_TRADE_DEFAULT * 100),
-    step=0.5,
-) / 100
-
+cash_available = st.sidebar.number_input("Cash available", min_value=0.0, value=float(DAY_TRADE_CAPITAL_DEFAULT), step=25.0)
+risk_per_trade = st.sidebar.number_input("Risk per trade %", min_value=0.5, max_value=10.0, value=float(RISK_PER_TRADE_DEFAULT * 100), step=0.5) / 100
 st.sidebar.write("Max risk per trade:", f"${cash_available * risk_per_trade:,.2f}")
 
 if st.sidebar.button("Refresh now"):
     st.cache_data.clear()
     st.rerun()
 
-
-# Market context
-
 st.header("Market Context")
-
 market_df = market_context()
 st.dataframe(market_df, use_container_width=True)
 
 regime, regime_text, regime_points, market_light = get_market_regime(market_df)
 
 if market_light == "GREEN":
-    st.success(f"🟢 Market Status: GREEN - {regime} - {regime_text}")
+    st.success(f"Green Market Status - {regime} - {regime_text}")
 elif market_light == "YELLOW":
-    st.warning(f"🟡 Market Status: YELLOW - {regime} - {regime_text}")
+    st.warning(f"Yellow Market Status - {regime} - {regime_text}")
 elif market_light == "RED":
-    st.error(f"🔴 Market Status: RED - {regime} - {regime_text}")
+    st.error(f"Red Market Status - {regime} - {regime_text}")
 else:
-    st.info(f"⚪ Market Status: UNKNOWN - {regime_text}")
+    st.info(f"Unknown Market Status - {regime_text}")
 
+st.header("Decision Board v15")
+rows = []
+for symbol in symbols:
+    result = analyze_ticker(symbol, regime, regime_points)
+    if result:
+        rows.append(result)
 
-# Trade journal
+df = pd.DataFrame(rows)
+if df.empty:
+    st.error("No market data loaded yet. Try Refresh, check your internet connection, or reduce the watchlist.")
+    st.stop()
 
-journal = load_journal()
+df = finalize_decision_board(df, regime, cash_available, risk_per_trade)
+daily_trading_coach(regime, market_light, df)
 
-journal_tab, upload_tab = st.tabs(["Trade Journal", "Robinhood CSV Upload"])
+display_cols = [
+    "Signal", "Ticker", "Pattern", "Price", "Probability %", "Setup Grade",
+    "Expected Value / Share", "Kelly %", "Today Trade Score", "Suggested Position $",
+    "Suggested Shares", "Allocation Note", "Intraday Trend", "OR Status", "OR Zone",
+    "OR Position", "Above VWAP", "VWAP Approx", "1D %", "5D %", "1M %",
+    "Rel Vol", "Dist 20MA %", "Reward/Risk", "Stop", "Target 1", "Target 2",
+]
+st.dataframe(df[display_cols], use_container_width=True, height=500)
+
+coach_tab, journal_tab, upload_tab, simulator_tab, chart_tab = st.tabs(
+    ["Pre-Trade Validator", "Trade Journal", "Robinhood CSV Upload", "Trade Simulator", "Charts"]
+)
+
+with coach_tab:
+    trade_validator_section(regime)
 
 with journal_tab:
+    journal = load_journal()
     journal_report(journal)
 
     st.subheader("Add Trade Journal Entry")
-
     with st.form("journal_entry_form", clear_on_submit=True):
         c1, c2, c3, c4 = st.columns(4)
-
         trade_date = c1.date_input("Date", value=date.today())
         ticker_input = c2.text_input("Ticker", value="")
-        pattern_input = c3.selectbox(
-            "Pattern",
-            [
-                "Bullish ORB",
-                "OR Breakout Watch",
-                "VWAP Continuation",
-                "Daily Breakout",
-                "Near Daily Breakout",
-                "Weak / Breakdown",
-                "No Clear Pattern",
-                "Other",
-            ],
-        )
-        grade_input = c4.selectbox(
-            "Setup Grade",
-            ["A+ Setup", "A Setup", "B Setup", "C Setup", "No Trade"],
-        )
+        pattern_input = c3.selectbox("Pattern", ["Bullish ORB", "OR Breakout Watch", "VWAP Continuation", "Daily Breakout", "Near Daily Breakout", "Weak / Breakdown", "No Clear Pattern", "Other"])
+        grade_input = c4.selectbox("Setup Grade", ["A+ Setup", "A Setup", "B Setup", "C Setup", "No Trade"])
 
         c5, c6, c7, c8 = st.columns(4)
-
-        signal_input = c5.selectbox(
-            "Signal",
-            ["BUY NOW", "BUY ON OR BREAKOUT", "WATCH", "WAIT", "AVOID", "Manual"],
-        )
+        signal_input = c5.selectbox("Signal", ["BUY NOW", "BUY ON OR BREAKOUT", "WATCH", "WAIT", "AVOID", "Manual"])
         entry_input = c6.number_input("Entry", min_value=0.0, step=0.01)
         exit_input = c7.number_input("Exit", min_value=0.0, step=0.01)
         stop_input = c8.number_input("Stop", min_value=0.0, step=0.01)
 
-        c9, c10, c11 = st.columns(3)
+        c9, c10, c11, c12 = st.columns(4)
+        target_input = c9.number_input("Target", min_value=0.0, step=0.01)
+        shares_input = c10.number_input("Shares", min_value=0.0, step=0.0001, format="%.6f")
+        mistake_input = c11.selectbox("Mistake", ["None", "Chased", "Ignored stop", "Sold too early", "Entered without trigger", "Oversized", "Revenge trade", "Other"])
+        notes_input = c12.text_input("Notes", value="")
 
-        shares_input = c9.number_input("Shares", min_value=0.0, step=0.0001, format="%.6f")
-        mistake_input = c10.selectbox(
-            "Mistake",
-            [
-                "None",
-                "Chased",
-                "Ignored stop",
-                "Sold too early",
-                "Entered without trigger",
-                "Oversized",
-                "Revenge trade",
-                "Other",
-            ],
-        )
-        notes_input = c11.text_input("Notes", value="")
+        c13, c14 = st.columns(2)
+        pre_trade_screenshot = c13.text_input("Pre-trade screenshot link/path", value="")
+        exit_screenshot = c14.text_input("Exit screenshot link/path", value="")
 
         submitted = st.form_submit_button("Add Journal Entry")
-
         if submitted:
             ticker_clean = ticker_input.strip().upper()
-
             if not ticker_clean:
                 st.error("Ticker is required.")
             elif entry_input <= 0 or exit_input <= 0 or shares_input <= 0:
@@ -947,25 +864,16 @@ with journal_tab:
                 pnl = (exit_input - entry_input) * shares_input
                 ret_pct = ((exit_input / entry_input) - 1) * 100
                 result = "Win" if pnl > 0 else "Loss" if pnl < 0 else "Breakeven"
-
                 new_row = {
-                    "Date": trade_date.isoformat(),
-                    "Ticker": ticker_clean,
-                    "Pattern": pattern_input,
-                    "Setup Grade": grade_input,
-                    "Signal": signal_input,
-                    "Market Regime": regime,
-                    "Entry": round(entry_input, 2),
-                    "Exit": round(exit_input, 2),
-                    "Stop": round(stop_input, 2),
-                    "Shares": round(shares_input, 6),
-                    "P/L": round(pnl, 2),
-                    "Return %": round(ret_pct, 2),
-                    "Result": result,
-                    "Mistake": mistake_input,
+                    "Date": trade_date.isoformat(), "Ticker": ticker_clean, "Pattern": pattern_input,
+                    "Setup Grade": grade_input, "Signal": signal_input, "Market Regime": regime,
+                    "Entry": round(entry_input, 2), "Exit": round(exit_input, 2),
+                    "Stop": round(stop_input, 2), "Target": round(target_input, 2),
+                    "Shares": round(shares_input, 6), "P/L": round(pnl, 2),
+                    "Return %": round(ret_pct, 2), "Result": result, "Mistake": mistake_input,
+                    "Pre-Trade Screenshot": pre_trade_screenshot, "Exit Screenshot": exit_screenshot,
                     "Notes": notes_input,
                 }
-
                 journal = pd.concat([journal, pd.DataFrame([new_row])], ignore_index=True)
                 save_journal(journal)
                 st.success("Journal entry saved. Click Refresh now to update the report card.")
@@ -977,146 +885,36 @@ with journal_tab:
 
 with upload_tab:
     uploaded = st.file_uploader("Upload Robinhood CSV trade history", type=["csv"])
-
     if uploaded is not None:
         trade_history_audit(uploaded)
 
+with simulator_tab:
+    st.header("Trade Simulator")
+    sim_cols = [
+        "Ticker", "Signal", "Pattern", "Probability %", "Setup Grade", "Price", "Stop",
+        "Target 1", "Target 2", "Reward/Risk", "Expected Value / Share", "Kelly %",
+        "Suggested Shares", "Suggested Position $", "Allocation Note",
+    ]
+    st.dataframe(df[sim_cols], use_container_width=True)
 
-# Decision board
+    positive_ev = df[df["Expected Value / Share"] > 0]
+    deployable = df[df["Suggested Position $"] > 0]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Positive EV Setups", len(positive_ev))
+    c2.metric("Deployable Setups", len(deployable))
+    c3.metric("Suggested Total Deployment", f"${df['Suggested Position $'].sum():,.2f}")
 
-st.header("Decision Board v14")
+    if deployable.empty:
+        st.info("Simulator verdict: deploy $0. Wait for a cleaner setup.")
+    else:
+        st.success("Simulator verdict: one or more setups are deployable under current rules.")
 
-rows = []
+with chart_tab:
+    st.header("Charts")
+    selected = st.selectbox("Select chart", df["Ticker"].tolist())
+    timeframe = st.radio("Chart timeframe", ["5m intraday", "15m intraday", "3mo daily"], horizontal=True)
+    chart = make_chart(selected, timeframe)
+    if chart:
+        st.plotly_chart(chart, use_container_width=True)
 
-for symbol in symbols:
-    result = analyze_ticker(symbol, regime, regime_points)
-    if result:
-        rows.append(result)
-
-df = pd.DataFrame(rows)
-
-if df.empty:
-    st.error("No market data loaded yet. Try Refresh, check your internet connection, or reduce the watchlist.")
-    st.stop()
-
-df = finalize_decision_board(df, regime, cash_available, risk_per_trade)
-
-display_cols = [
-    "Signal",
-    "Ticker",
-    "Pattern",
-    "Price",
-    "Probability %",
-    "Setup Grade",
-    "Expected Value / Share",
-    "Kelly %",
-    "Today Trade Score",
-    "Suggested Position $",
-    "Suggested Shares",
-    "Allocation Note",
-    "Intraday Trend",
-    "OR Status",
-    "OR Zone",
-    "OR Position",
-    "Above VWAP",
-    "VWAP Approx",
-    "1D %",
-    "5D %",
-    "1M %",
-    "Rel Vol",
-    "Dist 20MA %",
-    "Reward/Risk",
-    "Stop",
-    "Target 1",
-    "Target 2",
-]
-
-st.dataframe(df[display_cols], use_container_width=True, height=500)
-
-
-# Best trade summary
-
-best = df.iloc[0]
-
-st.header("Best Trade Right Now")
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("Ticker", best["Ticker"])
-col2.metric("Signal", best["Signal"])
-col3.metric("Probability", f"{best['Probability %']}%")
-col4.metric("Grade", best["Setup Grade"])
-col5.metric("EV / Share", f"${best['Expected Value / Share']:.2f}")
-col6.metric("Suggested $", f"${best['Suggested Position $']:,.2f}")
-
-if best["Expected Value / Share"] > 0 and best["Suggested Position $"] > 0:
-    st.success(
-        f"Best actionable setup: {best['Ticker']} - {best['Signal']} - "
-        f"{best['Setup Grade']} - suggested position ${best['Suggested Position $']:,.2f}"
-    )
-elif best["Expected Value / Share"] > 0:
-    st.warning(
-        f"Best theoretical setup: {best['Ticker']} has positive EV, but no valid entry trigger yet."
-    )
-else:
-    st.error("No positive expected-value day trade right now. Cash is the best position.")
-
-
-# Trade simulator
-
-st.header("Trade Simulator")
-
-sim_cols = [
-    "Ticker",
-    "Signal",
-    "Pattern",
-    "Probability %",
-    "Setup Grade",
-    "Price",
-    "Stop",
-    "Target 1",
-    "Target 2",
-    "Reward/Risk",
-    "Expected Value / Share",
-    "Kelly %",
-    "Suggested Shares",
-    "Suggested Position $",
-    "Allocation Note",
-]
-
-st.dataframe(df[sim_cols], use_container_width=True)
-
-positive_ev = df[df["Expected Value / Share"] > 0]
-deployable = df[df["Suggested Position $"] > 0]
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Positive EV Setups", len(positive_ev))
-c2.metric("Deployable Setups", len(deployable))
-c3.metric("Suggested Total Deployment", f"${df['Suggested Position $'].sum():,.2f}")
-
-if deployable.empty:
-    st.info("Simulator verdict: deploy $0. Wait for a cleaner setup.")
-else:
-    st.success("Simulator verdict: one or more setups are deployable under current rules.")
-
-
-# Charts
-
-st.header("Charts")
-
-selected = st.selectbox("Select chart", df["Ticker"].tolist())
-
-timeframe = st.radio(
-    "Chart timeframe",
-    ["5m intraday", "15m intraday", "3mo daily"],
-    horizontal=True,
-)
-
-chart = make_chart(selected, timeframe)
-
-if chart:
-    st.plotly_chart(chart, use_container_width=True)
-
-st.caption(
-    "Data comes from yfinance/Yahoo Finance and may be delayed or incomplete. "
-    "Use this dashboard as decision support, not blind execution."
-)
+st.caption("Data comes from yfinance/Yahoo Finance and may be delayed or incomplete. Use this dashboard as decision support, not blind execution.")
