@@ -8,12 +8,13 @@ from datetime import datetime, date
 import os
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v17
-# v16 + Trade Plan Card + Top 5 Ranked Opportunities
-# + Checklist Engine + Bulkowski-style Pattern Notes
+# DEON'S TRADER DASHBOARD v18
+# v17 + Institutional Scanner:
+# Top Trade of Day, Do Not Trade List, Relative Strength,
+# Sector Strength, Gap Scanner, Market Health, AI Watchlist Builder
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v17", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v18", layout="wide")
 
 DEFAULT_WATCHLIST = ["NVDA", "MRVL", "CRDO", "MU", "TSM", "AVGO", "PLTR", "AMD"]
 
@@ -24,12 +25,42 @@ SCAN_UNIVERSE = [
     "SMCI", "DELL", "ORCL", "CEG", "VRT", "ANET",
 ]
 
+SECTOR_MAP = {
+    "NVDA": "Semiconductors",
+    "AMD": "Semiconductors",
+    "AVGO": "Semiconductors",
+    "ARM": "Semiconductors",
+    "MU": "Semiconductors",
+    "TSM": "Semiconductors",
+    "MRVL": "Semiconductors",
+    "CRDO": "Semiconductors",
+    "SMCI": "AI Infrastructure",
+    "DELL": "AI Infrastructure",
+    "VRT": "AI Infrastructure",
+    "ANET": "AI Infrastructure",
+    "PLTR": "AI Software",
+    "TEM": "AI Software",
+    "APP": "Software Momentum",
+    "MSFT": "Mega Cap Tech",
+    "GOOGL": "Mega Cap Tech",
+    "META": "Mega Cap Tech",
+    "AMZN": "Mega Cap Tech",
+    "HOOD": "Fintech Momentum",
+    "SOFI": "Fintech Momentum",
+    "COIN": "Crypto Momentum",
+    "MSTR": "Crypto Momentum",
+    "HIMS": "Consumer Momentum",
+    "RDDT": "Consumer Momentum",
+    "TSLA": "High Beta Momentum",
+    "ORCL": "Enterprise Software",
+    "CEG": "Power / Energy",
+}
+
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
 DAY_TRADE_CAPITAL_DEFAULT = 855
 RISK_PER_TRADE_DEFAULT = 0.03
-JOURNAL_FILE = "trade_journal_v17.csv"
-
+JOURNAL_FILE = "trade_journal_v18.csv"
 
 BULKOWSKI_NOTES = {
     "Bullish ORB": {
@@ -159,14 +190,19 @@ def journal_report(journal):
 
     win_rate = len(wins) / len(journal) * 100 if len(journal) else 0
     avg_win = wins["P/L"].mean() if not wins.empty else 0
+    avg_loss = losses["P/L"].mean() if not losses.empty else 0
     profit_factor = wins["P/L"].sum() / abs(losses["P/L"].sum()) if not losses.empty else np.inf
+    expectancy = journal["P/L"].mean() if len(journal) else 0
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Journal P/L", f"${total_pnl:,.2f}")
     c2.metric("Win Rate", f"{win_rate:.1f}%")
     c3.metric("Trades", len(journal))
     c4.metric("Avg Win", f"${avg_win:,.2f}")
-    c5.metric("Profit Factor", "infinity" if profit_factor == np.inf else f"{profit_factor:.2f}")
+    c5.metric("Avg Loss", f"${avg_loss:,.2f}")
+    c6.metric("Expectancy", f"${expectancy:,.2f}")
+
+    st.metric("Profit Factor", "infinity" if profit_factor == np.inf else f"{profit_factor:.2f}")
 
     st.subheader("Journal Entries")
     st.dataframe(journal.sort_values("Date", ascending=False), use_container_width=True)
@@ -288,13 +324,14 @@ def market_context():
             "Market": ticker,
             "Price": round(float(df["Close"].iloc[-1]), 2),
             "1D %": round(safe_pct_change(df, 2), 2),
+            "5D %": round(safe_pct_change(df, 6), 2),
         })
     return pd.DataFrame(rows)
 
 
 def get_market_regime(market_df):
     if market_df.empty or "Market" not in market_df.columns:
-        return "Unknown", "Market data unavailable", 0, "GRAY"
+        return "Unknown", "Market data unavailable", 0, "GRAY", 0
 
     spy = market_df.loc[market_df["Market"] == "SPY", "1D %"].values
     qqq = market_df.loc[market_df["Market"] == "QQQ", "1D %"].values
@@ -304,30 +341,37 @@ def get_market_regime(market_df):
     qqq_val = qqq[0] if len(qqq) > 0 else 0
     vix_val = vix[0] if len(vix) > 0 else 0
 
+    score = 50
+    score += 20 if spy_val > 0 else -15
+    score += 20 if qqq_val > 0 else -15
+    score += 10 if vix_val <= 0 else -20
+    score = max(0, min(100, score))
+
     if spy_val > 0 and qqq_val > 0 and vix_val <= 0:
-        return "Bullish", "SPY positive, QQQ positive, VIX calm", 8, "GREEN"
+        return "Bullish", "SPY positive, QQQ positive, VIX calm", 8, "GREEN", score
     if spy_val > 0 and qqq_val > 0 and vix_val > 0:
-        return "Mixed", "SPY positive, QQQ positive, but VIX rising", 0, "YELLOW"
-    return "Defensive", "Weak index backdrop or elevated volatility", -12, "RED"
+        return "Mixed", "SPY positive, QQQ positive, but VIX rising", 0, "YELLOW", score
+    return "Defensive", "Weak index backdrop or elevated volatility", -12, "RED", score
 
 
-def market_regime_meter(market_light, regime, regime_text):
-    st.header("Market Regime Meter")
+def market_regime_meter(market_light, regime, regime_text, market_score):
+    st.header("Market Health Dashboard")
 
     if market_light == "GREEN":
         st.success("GREEN - Aggressive but controlled")
-        st.progress(100)
     elif market_light == "YELLOW":
         st.warning("YELLOW - Selective only")
-        st.progress(55)
     elif market_light == "RED":
         st.error("RED - Capital preservation")
-        st.progress(15)
     else:
         st.info("UNKNOWN - Market data incomplete")
-        st.progress(0)
 
-    st.write(f"Regime: **{regime}**")
+    st.progress(int(market_score))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Market Score", f"{market_score}/100")
+    c2.metric("Regime", regime)
+    c3.metric("Mode", "Aggressive" if market_light == "GREEN" else "Selective" if market_light == "YELLOW" else "Defensive")
+
     st.write(f"Reason: {regime_text}")
 
 
@@ -461,6 +505,16 @@ def probability_engine(row, regime):
     if row["1D %"] > 8 or row["1D %"] < -3:
         probability -= 8
 
+    if row["RS Score"] >= 80:
+        probability += 5
+    elif row["RS Score"] < 40:
+        probability -= 5
+
+    if row["Gap %"] >= 2 and row["Above VWAP"]:
+        probability += 4
+    elif row["Gap %"] <= -2:
+        probability -= 4
+
     if regime == "Bullish":
         probability += 6
     elif regime == "Defensive":
@@ -542,7 +596,34 @@ def classify_pattern(snap, breakout, near_breakout, above20, above50):
     return "No Clear Pattern"
 
 
-def analyze_ticker(ticker, regime, regime_points):
+def get_rs_score(ticker_df, spy_df):
+    if ticker_df.empty or spy_df.empty:
+        return 50
+    stock_5d = safe_pct_change(ticker_df, 6)
+    stock_1m = safe_pct_change(ticker_df, 22)
+    spy_5d = safe_pct_change(spy_df, 6)
+    spy_1m = safe_pct_change(spy_df, 22)
+
+    if np.isnan(stock_5d) or np.isnan(stock_1m) or np.isnan(spy_5d) or np.isnan(spy_1m):
+        return 50
+
+    spread = ((stock_5d - spy_5d) * 2) + (stock_1m - spy_1m)
+    score = 50 + spread
+    return int(max(0, min(100, round(score))))
+
+
+def get_gap_pct(daily):
+    if daily.empty or len(daily) < 2:
+        return 0.0
+    try:
+        prev_close = float(daily["Close"].iloc[-2])
+        today_open = float(daily["Open"].iloc[-1])
+        return round(((today_open / prev_close) - 1) * 100, 2)
+    except Exception:
+        return 0.0
+
+
+def analyze_ticker(ticker, regime, regime_points, spy_df):
     daily = get_data(ticker, "3mo", "1d")
     if daily.empty or len(daily) < 50:
         return None
@@ -559,6 +640,8 @@ def analyze_ticker(ticker, regime, regime_points):
     avg_vol20 = float(daily["Volume"].rolling(20).mean().iloc[-1])
     rel_vol = float(daily["Volume"].iloc[-1]) / avg_vol20 if avg_vol20 > 0 else np.nan
     dist20 = ((close / ma20) - 1) * 100
+    rs_score = get_rs_score(daily, spy_df)
+    gap_pct = get_gap_pct(daily)
 
     above20 = close > ma20
     above50 = close > ma50
@@ -605,6 +688,14 @@ def analyze_ticker(ticker, regime, regime_points):
         score -= 12
     if one_day > 8:
         score -= 10
+    if rs_score >= 80:
+        score += 8
+    elif rs_score < 40:
+        score -= 8
+    if gap_pct >= 2:
+        score += 4
+    elif gap_pct <= -2:
+        score -= 4
 
     score += regime_points
     score = max(0, min(100, round(score, 1)))
@@ -621,12 +712,14 @@ def analyze_ticker(ticker, regime, regime_points):
         signal = "AVOID"
 
     return {
-        "Signal": signal, "Ticker": ticker, "Pattern": pattern, "Price": round(close, 2),
+        "Signal": signal, "Ticker": ticker, "Sector": SECTOR_MAP.get(ticker, "Other"),
+        "Pattern": pattern, "Price": round(close, 2),
         "Today Trade Score": score, "Intraday Trend": snap["Intraday Trend"],
         "OR Status": snap["OR Status"], "OR Zone": snap["OR Zone"], "OR Position": snap["OR Position"],
         "Above VWAP": snap["Above VWAP"], "VWAP Approx": snap["VWAP Approx"],
         "OR High": snap["OR High"], "OR Low": snap["OR Low"],
         "1D %": round(one_day, 2), "5D %": round(five_day, 2), "1M %": round(one_month, 2),
+        "Gap %": gap_pct, "RS Score": rs_score,
         "Rel Vol": round(rel_vol, 2), "20 MA": round(ma20, 2), "50 MA": round(ma50, 2),
         "Dist 20MA %": round(dist20, 2), "Reward/Risk": round(rr, 2) if not np.isnan(rr) else np.nan,
         "Stop": stop, "Target 1": target1, "Target 2": target2,
@@ -648,38 +741,39 @@ def finalize_decision_board(df, regime, cash_available, risk_per_trade):
     return df.sort_values(["Expected Value / Share", "Probability %", "Today Trade Score"], ascending=False)
 
 
-def trade_plan_card(row, cash_available, risk_per_trade):
-    st.header("Trade Plan Card")
+def trade_plan_card(row):
+    st.header("Top Trade of the Day / Trade Plan Card")
 
     if row is None:
         st.info("No candidate available.")
         return
 
     risk_per_share = row["Price"] - row["Stop"]
-    reward1 = row["Target 1"] - row["Price"]
-    reward2 = row["Target 2"] - row["Price"]
     dollar_risk = row["Suggested Shares"] * risk_per_share
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Ticker", row["Ticker"])
     c2.metric("Signal", row["Signal"])
     c3.metric("Probability", f"{row['Probability %']}%")
     c4.metric("Grade", row["Setup Grade"])
+    c5.metric("RS Score", row["RS Score"])
 
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("Entry Area", f"${row['Price']:.2f}")
-    c6.metric("Stop", f"${row['Stop']:.2f}")
-    c7.metric("Target 1", f"${row['Target 1']:.2f}")
-    c8.metric("Target 2", f"${row['Target 2']:.2f}")
+    c6, c7, c8, c9 = st.columns(4)
+    c6.metric("Entry Area", f"${row['Price']:.2f}")
+    c7.metric("Stop", f"${row['Stop']:.2f}")
+    c8.metric("Target 1", f"${row['Target 1']:.2f}")
+    c9.metric("Target 2", f"${row['Target 2']:.2f}")
 
-    c9, c10, c11, c12 = st.columns(4)
-    c9.metric("Suggested Shares", f"{row['Suggested Shares']:.4f}")
-    c10.metric("Suggested Position", f"${row['Suggested Position $']:,.2f}")
-    c11.metric("Dollar Risk", f"${dollar_risk:,.2f}")
-    c12.metric("EV / Share", f"${row['Expected Value / Share']:.2f}")
+    c10, c11, c12, c13 = st.columns(4)
+    c10.metric("Suggested Shares", f"{row['Suggested Shares']:.4f}")
+    c11.metric("Suggested Position", f"${row['Suggested Position $']:,.2f}")
+    c12.metric("Dollar Risk", f"${dollar_risk:,.2f}")
+    c13.metric("EV / Share", f"${row['Expected Value / Share']:.2f}")
 
+    st.write(f"Sector: **{row['Sector']}**")
     st.write(f"Pattern: **{row['Pattern']}**")
     st.write(f"Intraday: **{row['Intraday Trend']}**, OR Zone: **{row['OR Zone']}**, Above VWAP: **{row['Above VWAP']}**")
+    st.write(f"Gap: **{row['Gap %']}%**, Relative Volume: **{row['Rel Vol']}x**")
 
     if row["Suggested Position $"] > 0:
         st.success("Actionable plan: position size is allowed under current rules.")
@@ -690,7 +784,7 @@ def trade_plan_card(row, cash_available, risk_per_trade):
 
 
 def checklist_card(row, market_light):
-    st.header("Trade Checklist")
+    st.header("Trading Checklist")
 
     if row is None:
         st.info("No candidate available.")
@@ -705,6 +799,7 @@ def checklist_card(row, market_light):
         ("Expected value positive", row["Expected Value / Share"] > 0),
         ("Not extended over 20MA", row["Dist 20MA %"] <= 12),
         ("Relative volume acceptable", row["Rel Vol"] >= 0.75),
+        ("RS Score >= 60", row["RS Score"] >= 60),
     ]
 
     passed = sum(1 for _, value in checks if value)
@@ -720,14 +815,14 @@ def checklist_card(row, market_light):
 
     if passed == total:
         st.success("Checklist verdict: TRADEABLE")
-    elif passed >= 6:
+    elif passed >= 7:
         st.warning("Checklist verdict: WATCH ONLY / WAIT FOR TRIGGER")
     else:
         st.error("Checklist verdict: NO TRADE")
 
 
 def bulkowski_notes_card(row):
-    st.header("Bulkowski-Style Pattern Notes")
+    st.header("Bulkowski-Style Pattern Engine")
 
     if row is None:
         st.info("No candidate available.")
@@ -744,6 +839,129 @@ def bulkowski_notes_card(row):
     c2.write(f"Risk Note: {note['Risk Note']}")
 
     st.caption("These are educational pattern notes inspired by classic chart-pattern principles. They are not guaranteed win rates.")
+
+
+def do_not_trade_list(scan_df):
+    st.header("Do Not Trade List")
+
+    if scan_df.empty:
+        st.info("No scanner data loaded.")
+        return
+
+    avoid = scan_df[
+        (scan_df["Signal"] == "AVOID") |
+        (scan_df["Expected Value / Share"] <= 0) |
+        (scan_df["Above VWAP"] == False) |
+        (scan_df["RS Score"] < 40)
+    ].copy()
+
+    if avoid.empty:
+        st.success("No major avoid names right now.")
+        return
+
+    reasons = []
+    for _, row in avoid.iterrows():
+        row_reasons = []
+        if row["Signal"] == "AVOID":
+            row_reasons.append("Avoid signal")
+        if row["Expected Value / Share"] <= 0:
+            row_reasons.append("Negative EV")
+        if not row["Above VWAP"]:
+            row_reasons.append("Below VWAP")
+        if row["RS Score"] < 40:
+            row_reasons.append("Weak RS")
+        reasons.append(", ".join(row_reasons))
+
+    avoid["Reason"] = reasons
+    st.dataframe(
+        avoid[["Ticker", "Sector", "Price", "Signal", "Reason", "Intraday Trend", "OR Zone", "RS Score", "Expected Value / Share"]],
+        use_container_width=True,
+        height=360,
+    )
+
+
+def sector_strength_section(scan_df):
+    st.header("Sector Strength Ranking")
+
+    if scan_df.empty:
+        st.info("No scanner data loaded.")
+        return
+
+    sector = (
+        scan_df.groupby("Sector")
+        .agg(
+            Avg_RS=("RS Score", "mean"),
+            Avg_5D=("5D %", "mean"),
+            Avg_1M=("1M %", "mean"),
+            Avg_Score=("Today Trade Score", "mean"),
+            Names=("Ticker", "count"),
+        )
+        .reset_index()
+    )
+
+    sector["Avg_RS"] = sector["Avg_RS"].round(1)
+    sector["Avg_5D"] = sector["Avg_5D"].round(2)
+    sector["Avg_1M"] = sector["Avg_1M"].round(2)
+    sector["Avg_Score"] = sector["Avg_Score"].round(1)
+    sector = sector.sort_values(["Avg_RS", "Avg_Score"], ascending=False)
+
+    st.dataframe(sector, use_container_width=True)
+
+
+def gap_scanner_section(scan_df):
+    st.header("Gap Scanner")
+
+    if scan_df.empty:
+        st.info("No scanner data loaded.")
+        return
+
+    gap_df = scan_df.copy()
+    gap_df = gap_df.sort_values("Gap %", ascending=False)
+
+    st.subheader("Positive Gaps")
+    st.dataframe(
+        gap_df[gap_df["Gap %"] > 0][["Ticker", "Sector", "Gap %", "Price", "Signal", "Pattern", "Above VWAP", "RS Score"]],
+        use_container_width=True,
+        height=300,
+    )
+
+    st.subheader("Negative Gaps")
+    st.dataframe(
+        gap_df[gap_df["Gap %"] < 0][["Ticker", "Sector", "Gap %", "Price", "Signal", "Pattern", "Above VWAP", "RS Score"]],
+        use_container_width=True,
+        height=300,
+    )
+
+
+def ai_watchlist_builder(scan_df, market_light):
+    st.header("AI Watchlist Builder")
+
+    if scan_df.empty:
+        st.info("No scanner data loaded.")
+        return
+
+    if market_light == "RED":
+        filtered = scan_df[
+            (scan_df["RS Score"] >= 60) &
+            (scan_df["Above VWAP"] == True)
+        ].head(8)
+        st.warning("RED market: watchlist is conservative. Only stronger names above VWAP are included.")
+    else:
+        filtered = scan_df[
+            (scan_df["Probability %"] >= 50) |
+            (scan_df["RS Score"] >= 65)
+        ].head(10)
+
+    if filtered.empty:
+        st.error("No suitable watchlist candidates. Cash is the watchlist.")
+        return
+
+    watchlist_string = ",".join(filtered["Ticker"].tolist())
+    st.code(watchlist_string)
+    st.dataframe(
+        filtered[["Ticker", "Sector", "Signal", "Pattern", "Probability %", "RS Score", "Expected Value / Share"]],
+        use_container_width=True,
+    )
 
 
 def validate_trade(entry, stop, target, shares, regime, above_vwap, above_or_high, probability, already_traded_today, revenge_trade_risk):
@@ -896,8 +1114,7 @@ def daily_trading_coach(regime, market_light, df):
 
 
 def opportunity_scanner_section(scan_df, market_light):
-    st.header("Opportunity Scanner v17")
-    st.caption("This scans a wider universe than the manual watchlist and ranks the best current setups.")
+    st.header("Institutional Opportunity Scanner v18")
 
     if scan_df.empty:
         st.warning("No scanner data loaded.")
@@ -908,48 +1125,31 @@ def opportunity_scanner_section(scan_df, market_light):
     st.subheader("Top 5 Ranked Opportunities")
     top5 = top.head(5).copy()
     top5.insert(0, "Rank", range(1, len(top5) + 1))
-
     st.dataframe(
         top5[[
-            "Rank", "Ticker", "Signal", "Pattern", "Price", "Probability %",
+            "Rank", "Ticker", "Sector", "Signal", "Pattern", "Price", "Probability %",
             "Setup Grade", "Expected Value / Share", "Suggested Position $",
-            "Today Trade Score", "Intraday Trend", "OR Zone", "Above VWAP"
+            "RS Score", "Gap %", "Today Trade Score", "Intraday Trend", "OR Zone", "Above VWAP"
         ]],
         use_container_width=True,
     )
 
     best = top.iloc[0]
-    trade_plan_card(best, 0, 0)
+    trade_plan_card(best)
     checklist_card(best, market_light)
     bulkowski_notes_card(best)
+    do_not_trade_list(scan_df)
 
     st.subheader("Full Scanner Results")
     st.dataframe(
         top[[
-            "Ticker", "Signal", "Pattern", "Price", "Probability %", "Setup Grade",
-            "Expected Value / Share", "Today Trade Score", "Intraday Trend",
+            "Ticker", "Sector", "Signal", "Pattern", "Price", "Probability %", "Setup Grade",
+            "Expected Value / Share", "RS Score", "Gap %", "Today Trade Score", "Intraday Trend",
             "OR Zone", "Above VWAP", "1D %", "5D %", "Rel Vol"
         ]],
         use_container_width=True,
         height=360,
     )
-
-    avoid = scan_df[scan_df["Signal"] == "AVOID"].head(10)
-    st.subheader("Avoid / Weak Names")
-    if avoid.empty:
-        st.info("No avoid names from this scan.")
-    else:
-        st.dataframe(
-            avoid[["Ticker", "Signal", "Pattern", "Price", "Intraday Trend", "OR Zone", "1D %", "Expected Value / Share"]],
-            use_container_width=True,
-        )
-
-    if market_light == "RED":
-        st.error("Scanner verdict: RED market. Treat all ideas as watchlist only unless an A+ confirmed breakout appears.")
-    elif len(top) and top.iloc[0]["Suggested Position $"] > 0:
-        st.success(f"Scanner verdict: Best deployable idea is {top.iloc[0]['Ticker']}.")
-    else:
-        st.warning("Scanner verdict: No clean deployable setup yet. Keep watching the top 3 only.")
 
 
 def make_chart(ticker, timeframe):
@@ -986,18 +1186,14 @@ def make_chart(ticker, timeframe):
 # APP LAYOUT
 # ============================================================
 
-st.title("Deon's Trader Dashboard v17")
+st.title("Deon's Trader Dashboard v18")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
-watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(["NVDA", "MRVL", "CRDO", "MU", "TSM", "AVGO", "PLTR", "AMD"]))
+watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST))
 symbols = [x.strip().upper() for x in watchlist_text.split(",") if x.strip()]
 
-scan_text = st.sidebar.text_area(
-    "Scanner Universe",
-    ",".join(["NVDA", "AMD", "AVGO", "ARM", "MU", "TSM", "MRVL", "CRDO", "PLTR", "TEM", "APP", "HOOD", "HIMS", "SOFI", "RDDT", "META", "AMZN", "MSFT", "GOOGL", "TSLA", "COIN", "MSTR", "SMCI", "DELL", "ORCL", "CEG", "VRT", "ANET"]),
-    height=180,
-)
+scan_text = st.sidebar.text_area("Scanner Universe", ",".join(SCAN_UNIVERSE), height=180)
 scan_symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
 cash_available = st.sidebar.number_input("Cash available", min_value=0.0, value=float(DAY_TRADE_CAPITAL_DEFAULT), step=25.0)
@@ -1012,14 +1208,33 @@ st.header("Market Context")
 market_df = market_context()
 st.dataframe(market_df, use_container_width=True)
 
-regime, regime_text, regime_points, market_light = get_market_regime(market_df)
+regime, regime_text, regime_points, market_light, market_score = get_market_regime(market_df)
+market_regime_meter(market_light, regime, regime_text, market_score)
 
-market_regime_meter(market_light, regime, regime_text)
+spy_df = get_data("SPY", "3mo", "1d")
 
-st.header("Manual Watchlist Decision Board v17")
+with st.spinner("Scanning institutional universe..."):
+    scan_rows = []
+    seen = set()
+    for symbol in scan_symbols:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        result = analyze_ticker(symbol, regime, regime_points, spy_df)
+        if result:
+            scan_rows.append(result)
+    scan_df = pd.DataFrame(scan_rows)
+    if not scan_df.empty:
+        scan_df = finalize_decision_board(scan_df, regime, cash_available, risk_per_trade)
+
+if scan_df.empty:
+    st.error("No scanner data loaded. Try Refresh or reduce the scanner universe.")
+    st.stop()
+
+st.header("Manual Watchlist Decision Board v18")
 rows = []
 for symbol in symbols:
-    result = analyze_ticker(symbol, regime, regime_points)
+    result = analyze_ticker(symbol, regime, regime_points, spy_df)
     if result:
         rows.append(result)
 
@@ -1029,41 +1244,47 @@ if df.empty:
     st.stop()
 
 df = finalize_decision_board(df, regime, cash_available, risk_per_trade)
-daily_trading_coach(regime, market_light, df)
+daily_trading_coach(regime, market_light, scan_df)
 
 display_cols = [
-    "Signal", "Ticker", "Pattern", "Price", "Probability %", "Setup Grade",
-    "Expected Value / Share", "Kelly %", "Today Trade Score", "Suggested Position $",
-    "Suggested Shares", "Allocation Note", "Intraday Trend", "OR Status", "OR Zone",
-    "OR Position", "Above VWAP", "VWAP Approx", "1D %", "5D %", "1M %",
-    "Rel Vol", "Dist 20MA %", "Reward/Risk", "Stop", "Target 1", "Target 2",
+    "Signal", "Ticker", "Sector", "Pattern", "Price", "Probability %", "Setup Grade",
+    "Expected Value / Share", "Kelly %", "RS Score", "Gap %", "Today Trade Score",
+    "Suggested Position $", "Suggested Shares", "Allocation Note", "Intraday Trend",
+    "OR Status", "OR Zone", "OR Position", "Above VWAP", "VWAP Approx", "1D %",
+    "5D %", "1M %", "Rel Vol", "Dist 20MA %", "Reward/Risk", "Stop", "Target 1", "Target 2",
 ]
 st.dataframe(df[display_cols], use_container_width=True, height=500)
 
-scan_tab, plan_tab, coach_tab, journal_tab, upload_tab, simulator_tab, chart_tab = st.tabs(
-    ["Opportunity Scanner", "Trade Plan", "Pre-Trade Validator", "Trade Journal", "Robinhood CSV Upload", "Trade Simulator", "Charts"]
+institutional_tab, sector_tab, gap_tab, watchlist_tab, plan_tab, coach_tab, journal_tab, upload_tab, simulator_tab, chart_tab = st.tabs(
+    [
+        "Institutional Scanner",
+        "Sector Strength",
+        "Gap Scanner",
+        "AI Watchlist Builder",
+        "Trade Plan",
+        "Pre-Trade Validator",
+        "Trade Journal",
+        "Robinhood CSV Upload",
+        "Trade Simulator",
+        "Charts",
+    ]
 )
 
-with scan_tab:
-    with st.spinner("Scanning expanded universe..."):
-        scan_rows = []
-        seen = set()
-        for symbol in scan_symbols:
-            if symbol in seen:
-                continue
-            seen.add(symbol)
-            result = analyze_ticker(symbol, regime, regime_points)
-            if result:
-                scan_rows.append(result)
-        scan_df = pd.DataFrame(scan_rows)
-        if not scan_df.empty:
-            scan_df = finalize_decision_board(scan_df, regime, cash_available, risk_per_trade)
+with institutional_tab:
+    opportunity_scanner_section(scan_df, market_light)
 
-    opportunity_scanner_section(scan_df if "scan_df" in locals() else pd.DataFrame(), market_light)
+with sector_tab:
+    sector_strength_section(scan_df)
+
+with gap_tab:
+    gap_scanner_section(scan_df)
+
+with watchlist_tab:
+    ai_watchlist_builder(scan_df, market_light)
 
 with plan_tab:
-    best = df.iloc[0] if not df.empty else None
-    trade_plan_card(best, cash_available, risk_per_trade)
+    best = scan_df.iloc[0] if not scan_df.empty else None
+    trade_plan_card(best)
     checklist_card(best, market_light)
     bulkowski_notes_card(best)
 
@@ -1136,18 +1357,19 @@ with upload_tab:
 with simulator_tab:
     st.header("Trade Simulator")
     sim_cols = [
-        "Ticker", "Signal", "Pattern", "Probability %", "Setup Grade", "Price", "Stop",
-        "Target 1", "Target 2", "Reward/Risk", "Expected Value / Share", "Kelly %",
+        "Ticker", "Sector", "Signal", "Pattern", "Probability %", "Setup Grade",
+        "Price", "Stop", "Target 1", "Target 2", "Reward/Risk",
+        "Expected Value / Share", "Kelly %", "RS Score", "Gap %",
         "Suggested Shares", "Suggested Position $", "Allocation Note",
     ]
-    st.dataframe(df[sim_cols], use_container_width=True)
+    st.dataframe(scan_df[sim_cols], use_container_width=True)
 
-    positive_ev = df[df["Expected Value / Share"] > 0]
-    deployable = df[df["Suggested Position $"] > 0]
+    positive_ev = scan_df[scan_df["Expected Value / Share"] > 0]
+    deployable = scan_df[scan_df["Suggested Position $"] > 0]
     c1, c2, c3 = st.columns(3)
     c1.metric("Positive EV Setups", len(positive_ev))
     c2.metric("Deployable Setups", len(deployable))
-    c3.metric("Suggested Total Deployment", f"${df['Suggested Position $'].sum():,.2f}")
+    c3.metric("Suggested Total Deployment", f"${scan_df['Suggested Position $'].sum():,.2f}")
 
     if deployable.empty:
         st.info("Simulator verdict: deploy $0. Wait for a cleaner setup.")
@@ -1156,7 +1378,7 @@ with simulator_tab:
 
 with chart_tab:
     st.header("Charts")
-    selected = st.selectbox("Select chart", df["Ticker"].tolist())
+    selected = st.selectbox("Select chart", scan_df["Ticker"].tolist())
     timeframe = st.radio("Chart timeframe", ["5m intraday", "15m intraday", "3mo daily"], horizontal=True)
     chart = make_chart(selected, timeframe)
     if chart:
