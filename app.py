@@ -1,26 +1,35 @@
 
 import os
 import json
+import base64
 from datetime import datetime, date
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v21
-# SNAPSHOT ENGINE
+# DEON'S TRADER DASHBOARD v22
+# AUTO SNAPSHOT PUBLISHER
 #
-# Based on v20 Money Flow Engine.
+# Based on v21 Snapshot Engine.
+#
 # New:
-# - Export dashboard_snapshot.csv
-# - Export dashboard_snapshot.json
-# - Export top10, top3, sectors, no-trade lists
-# - Copy/paste text summary for ChatGPT
+# - Publishes live dashboard_snapshot.json to GitHub
+# - Creates a public raw JSON link ChatGPT can inspect directly
+# - Eliminates screenshots/manual exports after one-time setup
+#
+# Required Streamlit secrets:
+# GITHUB_TOKEN = "ghp_..."
+# GITHUB_REPO = "username/repository"
+# GITHUB_BRANCH = "main"
+# SNAPSHOT_PATH = "dashboard_snapshot.json"
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v21", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v22", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -43,7 +52,7 @@ SECTOR = {
     "TSLA": "High Beta", "ORCL": "Software", "CEG": "Energy",
 }
 
-JOURNAL_FILE = "trade_journal_v21.csv"
+JOURNAL_FILE = "trade_journal_v22.csv"
 
 
 # ============================================================
@@ -179,15 +188,8 @@ def market_state(mdf):
     else:
         score -= 15
 
-    if spy_5d >= 0:
-        score += 8
-    else:
-        score -= 8
-
-    if qqq_5d >= 0:
-        score += 8
-    else:
-        score -= 8
+    score += 8 if spy_5d >= 0 else -8
+    score += 8 if qqq_5d >= 0 else -8
 
     if vix_1d <= 0:
         score += 10
@@ -727,7 +729,7 @@ def run_scan(symbols, light, cash, risk_pct):
 
 
 # ============================================================
-# SNAPSHOT ENGINE
+# SNAPSHOT + GITHUB PUBLISHER
 # ============================================================
 
 def sector_flow_df(scan):
@@ -751,6 +753,13 @@ def sector_flow_df(scan):
     return sec.sort_values(["Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
 
 
+def safe_records(df):
+    if df is None or df.empty:
+        return []
+    clean = df.replace([np.inf, -np.inf], np.nan).where(pd.notnull(df), None)
+    return clean.to_dict(orient="records")
+
+
 def make_snapshot(scan, mkt, light, regime, mscore, reason):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -758,6 +767,7 @@ def make_snapshot(scan, mkt, light, regime, mscore, reason):
     top = scan.iloc[0].to_dict()
     top_trade = tradeable.iloc[0].to_dict() if not tradeable.empty else None
     sectors = sector_flow_df(scan)
+    no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
 
     snapshot = {
         "timestamp": timestamp,
@@ -766,19 +776,77 @@ def make_snapshot(scan, mkt, light, regime, mscore, reason):
             "regime": regime,
             "score": int(mscore),
             "reason": reason,
-            "context": mkt.to_dict(orient="records"),
+            "context": safe_records(mkt),
         },
         "top_flow_name": top,
         "top_tradeable_name": top_trade,
         "tradeable_count": int(len(tradeable)),
         "scanned_count": int(len(scan)),
-        "top_3": scan.head(3).to_dict(orient="records"),
-        "top_10": scan.head(10).to_dict(orient="records"),
-        "sector_flow": sectors.to_dict(orient="records"),
-        "no_trade_watch": scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].head(10).to_dict(orient="records"),
+        "top_3": safe_records(scan.head(3)),
+        "top_10": safe_records(scan.head(10)),
+        "sector_flow": safe_records(sectors),
+        "no_trade_watch": safe_records(no_trade.head(10)),
     }
 
     return snapshot
+
+
+def github_secret(name, default=None):
+    try:
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return os.environ.get(name, default)
+
+
+def github_raw_url(repo, branch, path):
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{path}"
+
+
+def publish_snapshot_to_github(snapshot):
+    token = github_secret("GITHUB_TOKEN")
+    repo = github_secret("GITHUB_REPO")
+    branch = github_secret("GITHUB_BRANCH", "main")
+    snapshot_path = github_secret("SNAPSHOT_PATH", "dashboard_snapshot.json")
+
+    if not token or not repo:
+        return False, "Missing GITHUB_TOKEN or GITHUB_REPO in Streamlit secrets.", None
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{snapshot_path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "deon-trader-dashboard-v22",
+    }
+
+    sha = None
+    get_resp = requests.get(api_url, headers=headers, params={"ref": branch}, timeout=20)
+
+    if get_resp.status_code == 200:
+        sha = get_resp.json().get("sha")
+    elif get_resp.status_code != 404:
+        return False, f"GitHub read failed: {get_resp.status_code} {get_resp.text[:300]}", None
+
+    content = json.dumps(snapshot, indent=2, default=str)
+    encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+
+    payload = {
+        "message": f"Update dashboard snapshot {snapshot['timestamp']}",
+        "content": encoded,
+        "branch": branch,
+    }
+
+    if sha:
+        payload["sha"] = sha
+
+    put_resp = requests.put(api_url, headers=headers, json=payload, timeout=20)
+
+    if put_resp.status_code not in [200, 201]:
+        return False, f"GitHub write failed: {put_resp.status_code} {put_resp.text[:500]}", None
+
+    raw = github_raw_url(repo, branch, snapshot_path)
+    return True, "Snapshot published successfully.", raw
 
 
 def snapshot_summary_text(snapshot):
@@ -907,16 +975,48 @@ def money_flow_dashboard(scan, light, score, reason):
     )
 
 
-def snapshot_tab(scan, mkt, light, regime, mscore, reason):
-    st.header("Dashboard Snapshot Export")
+def live_publisher_tab(scan, mkt, light, regime, mscore, reason):
+    st.header("Live Snapshot Publisher")
 
     snapshot = make_snapshot(scan, mkt, light, regime, mscore, reason)
     summary_text = snapshot_summary_text(snapshot)
-    sectors = sector_flow_df(scan)
-    tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
-    no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
 
-    st.subheader("Copy/Paste Snapshot for ChatGPT")
+    repo = github_secret("GITHUB_REPO")
+    branch = github_secret("GITHUB_BRANCH", "main")
+    snapshot_path = github_secret("SNAPSHOT_PATH", "dashboard_snapshot.json")
+    raw_url = github_raw_url(repo, branch, snapshot_path) if repo else None
+
+    configured = bool(github_secret("GITHUB_TOKEN") and repo)
+
+    if configured:
+        st.success("GitHub publisher is configured.")
+        st.write("Public JSON URL:")
+        st.code(raw_url)
+    else:
+        st.error("GitHub publisher is not configured yet.")
+        st.write("Add these in Streamlit → Manage app → Settings → Secrets:")
+        st.code(
+            'GITHUB_TOKEN = "your_github_token_here"\n'
+            'GITHUB_REPO = "yourusername/yourrepo"\n'
+            'GITHUB_BRANCH = "main"\n'
+            'SNAPSHOT_PATH = "dashboard_snapshot.json"'
+        )
+
+    publish_col, info_col = st.columns([1, 2])
+
+    with publish_col:
+        if st.button("Publish snapshot now"):
+            ok, msg, published_url = publish_snapshot_to_github(snapshot)
+            if ok:
+                st.success(msg)
+                st.code(published_url)
+            else:
+                st.error(msg)
+
+    with info_col:
+        st.info("Once this publishes successfully, give ChatGPT the public JSON URL once. After that, say: check the snapshot.")
+
+    st.subheader("Current Snapshot Preview")
     st.text_area("Snapshot text", summary_text, height=420)
 
     st.download_button(
@@ -925,43 +1025,6 @@ def snapshot_tab(scan, mkt, light, regime, mscore, reason):
         file_name="dashboard_snapshot.json",
         mime="application/json",
     )
-
-    st.download_button(
-        "Download top 10 CSV",
-        data=convert_df_csv(scan.head(10)),
-        file_name="dashboard_top10.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "Download full scan CSV",
-        data=convert_df_csv(scan),
-        file_name="dashboard_full_scan.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "Download sector flow CSV",
-        data=convert_df_csv(sectors),
-        file_name="dashboard_sector_flow.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "Download tradeable names CSV",
-        data=convert_df_csv(tradeable),
-        file_name="dashboard_tradeable.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "Download no-trade watchlist CSV",
-        data=convert_df_csv(no_trade),
-        file_name="dashboard_no_trade_watch.csv",
-        mime="text/csv",
-    )
-
-    st.info("Fastest workflow: copy the Snapshot text box and paste it into ChatGPT. Best data workflow: download dashboard_snapshot.json or dashboard_top10.csv and upload it.")
 
 
 def trade_plan(row, light):
@@ -1316,7 +1379,7 @@ def charts(scan):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v21")
+st.title("Deon's Trader Dashboard v22")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -1327,6 +1390,8 @@ scan_text = st.sidebar.text_area("Scanner Universe", ",".join(DEFAULT_SCAN), hei
 cash = st.sidebar.number_input("Cash available", min_value=0.0, value=855.0, step=25.0)
 risk_input = st.sidebar.number_input("Base risk per trade %", min_value=0.25, max_value=10.0, value=3.0, step=0.25)
 risk_pct = risk_input / 100
+
+auto_publish = st.sidebar.checkbox("Auto-publish snapshot on refresh", value=False)
 
 st.sidebar.write("A+ max risk:", f"${cash * risk_pct:,.2f}")
 st.sidebar.write("A max risk:", f"${cash * risk_pct * 0.75:,.2f}")
@@ -1360,10 +1425,20 @@ if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
     st.stop()
 
+snapshot_obj = make_snapshot(scan, mkt, light, regime, mscore, reason)
+
+if auto_publish:
+    ok, msg, raw_url = publish_snapshot_to_github(snapshot_obj)
+    if ok:
+        st.sidebar.success("Snapshot published")
+    else:
+        st.sidebar.error("Publish failed")
+        st.sidebar.caption(msg)
+
 money_flow_dashboard(scan, light, mscore, reason)
 
 tabs = st.tabs([
-    "Snapshot Export",
+    "Live Publisher",
     "Money Flow Board",
     "Trade Plan",
     "Sector Flow",
@@ -1377,7 +1452,7 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
-    snapshot_tab(scan, mkt, light, regime, mscore, reason)
+    live_publisher_tab(scan, mkt, light, regime, mscore, reason)
 
 with tabs[1]:
     show_ranked_board(scan)
@@ -1415,4 +1490,4 @@ with tabs[9]:
 with tabs[10]:
     charts(scan)
 
-st.caption("v21 adds Snapshot Export so ChatGPT can review structured dashboard state instead of screenshots.")
+st.caption("v22 publishes dashboard_snapshot.json to GitHub so ChatGPT can inspect live structured dashboard state directly.")
