@@ -1,6 +1,6 @@
 
 import json
-from datetime import datetime
+from datetime import datetime, date
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,8 +8,8 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v28
-# MULTI-SOURCE INTELLIGENCE ENGINE BUILD
+# DEON'S TRADER DASHBOARD v29
+# EARNINGS + PREMARKET + LEARNING ENGINE BUILD
 #
 # Goal:
 # - Make the "10/10" workflow happen inside the app.
@@ -20,7 +20,7 @@ import yfinance as yf
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v28", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v29", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1062,7 +1062,7 @@ def add_multi_source_scores(scan):
     scan["Sector Component"] = scan["Sector Rotation Score"].fillna(50)
     scan["External Component"] = scan["External Score"].fillna(50)
 
-    # Composite score. This is v28's main ranking score.
+    # Composite score. This is v29's main ranking score.
     scan["Composite Score"] = (
         (scan["Technical Score"] * 0.25)
         + (scan["Money Flow Component"] * 0.25)
@@ -1143,6 +1143,342 @@ def catalyst_summary(scan):
     return "\n".join(lines)
 
 
+
+# ============================================================
+# EARNINGS / PREMARKET / LEARNING ENGINE
+# ============================================================
+
+LEARNING_FILE = "trade_learning_log_v29.csv"
+
+def parse_earnings_text(text):
+    """
+    Expected format:
+    TICKER | Timing | Date | Note
+
+    Timing examples:
+    Reports BMO
+    Reports AMC
+    Reported BMO
+    Reported AMC
+    No event
+
+    Example:
+    NVDA | Reports AMC | 2026-06-10 | earnings after close
+    CRDO | Reported AMC | 2026-06-03 | beat and raised guide
+    """
+    rows = []
+
+    if not text or not text.strip():
+        return pd.DataFrame(columns=["Ticker", "Earnings Timing", "Earnings Date", "Earnings Note"])
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+        ticker = parts[0].upper() if len(parts) >= 1 else ""
+        timing = parts[1] if len(parts) >= 2 else "Unknown"
+        edate = parts[2] if len(parts) >= 3 else ""
+        note = parts[3] if len(parts) >= 4 else ""
+
+        if ticker:
+            rows.append({
+                "Ticker": ticker,
+                "Earnings Timing": timing,
+                "Earnings Date": edate,
+                "Earnings Note": note,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def earnings_score_from_row(timing, edate):
+    timing_l = str(timing).lower().strip()
+
+    if "reported" in timing_l and ("bmo" in timing_l or "amc" in timing_l):
+        return 75, "Post-earnings catalyst window"
+
+    if "reports" in timing_l and "bmo" in timing_l:
+        return 35, "Reports before open soon; elevated risk"
+
+    if "reports" in timing_l and "amc" in timing_l:
+        return 42, "Reports after close soon; avoid forced late entries"
+
+    if "no event" in timing_l:
+        return 50, "No known earnings event"
+
+    if "unknown" in timing_l or not timing_l:
+        return 50, "Earnings timing unknown"
+
+    return 50, "Earnings timing entered but neutral"
+
+
+def apply_earnings_timing(scan, earnings_df):
+    scan = scan.copy()
+
+    if earnings_df is None or earnings_df.empty:
+        scan["Earnings Timing"] = "Unknown"
+        scan["Earnings Date"] = ""
+        scan["Earnings Note"] = ""
+    else:
+        earnings_df = earnings_df.copy()
+        earnings_df["Ticker"] = earnings_df["Ticker"].astype(str).str.upper().str.strip()
+        earnings_df = earnings_df.drop_duplicates(subset=["Ticker"], keep="last")
+        scan = scan.merge(earnings_df, on="Ticker", how="left")
+        scan["Earnings Timing"] = scan["Earnings Timing"].fillna("Unknown")
+        scan["Earnings Date"] = scan["Earnings Date"].fillna("")
+        scan["Earnings Note"] = scan["Earnings Note"].fillna("")
+
+    scores = scan.apply(lambda r: earnings_score_from_row(r["Earnings Timing"], r["Earnings Date"]), axis=1)
+    scan["Earnings Score"] = [x[0] for x in scores]
+    scan["Earnings Risk Note"] = [x[1] for x in scores]
+
+    return scan
+
+
+def parse_premarket_text(text):
+    """
+    Expected format:
+    TICKER | Gap % | Premarket RVOL | Note
+
+    Example:
+    CRDO | 4.2 | 3.5 | earnings gap with volume
+    NVDA | 1.1 | 1.4 | modest premarket activity
+    """
+    rows = []
+
+    if not text or not text.strip():
+        return pd.DataFrame(columns=["Ticker", "Premarket Gap %", "Premarket RVOL", "Premarket Note"])
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+        ticker = parts[0].upper() if len(parts) >= 1 else ""
+
+        try:
+            gap = float(parts[1]) if len(parts) >= 2 else 0.0
+        except Exception:
+            gap = 0.0
+
+        try:
+            rvol = float(parts[2]) if len(parts) >= 3 else 1.0
+        except Exception:
+            rvol = 1.0
+
+        note = parts[3] if len(parts) >= 4 else ""
+
+        if ticker:
+            rows.append({
+                "Ticker": ticker,
+                "Premarket Gap %": gap,
+                "Premarket RVOL": rvol,
+                "Premarket Note": note,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def premarket_score(gap, rvol):
+    score = 50
+
+    if gap >= 5:
+        score += 25
+    elif gap >= 3:
+        score += 18
+    elif gap >= 1:
+        score += 8
+    elif gap <= -5:
+        score -= 25
+    elif gap <= -3:
+        score -= 18
+    elif gap <= -1:
+        score -= 8
+
+    if rvol >= 5:
+        score += 25
+    elif rvol >= 3:
+        score += 18
+    elif rvol >= 2:
+        score += 12
+    elif rvol >= 1.25:
+        score += 6
+    elif rvol < 0.75:
+        score -= 8
+
+    return int(max(0, min(100, score)))
+
+
+def apply_premarket_activity(scan, premarket_df):
+    scan = scan.copy()
+
+    if premarket_df is None or premarket_df.empty:
+        scan["Premarket Gap %"] = 0.0
+        scan["Premarket RVOL"] = 1.0
+        scan["Premarket Note"] = ""
+    else:
+        premarket_df = premarket_df.copy()
+        premarket_df["Ticker"] = premarket_df["Ticker"].astype(str).str.upper().str.strip()
+        premarket_df = premarket_df.drop_duplicates(subset=["Ticker"], keep="last")
+        scan = scan.merge(premarket_df, on="Ticker", how="left")
+        scan["Premarket Gap %"] = scan["Premarket Gap %"].fillna(0.0)
+        scan["Premarket RVOL"] = scan["Premarket RVOL"].fillna(1.0)
+        scan["Premarket Note"] = scan["Premarket Note"].fillna("")
+
+    scan["Premarket Score"] = scan.apply(
+        lambda r: premarket_score(r["Premarket Gap %"], r["Premarket RVOL"]),
+        axis=1,
+    )
+
+    return scan
+
+
+def empty_learning_log():
+    return pd.DataFrame(columns=[
+        "Date", "Ticker", "Setup", "Verdict", "Composite Score",
+        "Entry", "Exit", "Shares", "P/L", "Return %",
+        "Mistake", "Notes"
+    ])
+
+
+def load_learning_log():
+    try:
+        if Path(LEARNING_FILE).exists():
+            return pd.read_csv(LEARNING_FILE)
+    except Exception:
+        pass
+    return empty_learning_log()
+
+
+def save_learning_log(df):
+    df.to_csv(LEARNING_FILE, index=False)
+
+
+def learning_stats(log_df):
+    if log_df is None or log_df.empty:
+        return pd.DataFrame(columns=["Setup", "Trades", "Win Rate %", "Total P/L", "Avg Return %", "Learning Score"])
+
+    df = log_df.copy()
+    df["P/L"] = pd.to_numeric(df["P/L"], errors="coerce").fillna(0)
+    df["Return %"] = pd.to_numeric(df["Return %"], errors="coerce").fillna(0)
+
+    grouped = df.groupby("Setup").agg(
+        Trades=("Ticker", "count"),
+        Wins=("P/L", lambda x: (x > 0).sum()),
+        Total_PL=("P/L", "sum"),
+        Avg_Return=("Return %", "mean"),
+    ).reset_index()
+
+    grouped["Win Rate %"] = np.where(grouped["Trades"] > 0, grouped["Wins"] / grouped["Trades"] * 100, 0).round(1)
+    grouped["Total P/L"] = grouped["Total_PL"].round(2)
+    grouped["Avg Return %"] = grouped["Avg_Return"].round(2)
+
+    # Neutral 50, adjusted by win rate and average return.
+    grouped["Learning Score"] = (
+        50
+        + ((grouped["Win Rate %"] - 50) * 0.40)
+        + (grouped["Avg Return %"] * 4)
+    ).round(1)
+
+    grouped["Learning Score"] = grouped["Learning Score"].clip(lower=0, upper=100)
+
+    return grouped[["Setup", "Trades", "Win Rate %", "Total P/L", "Avg Return %", "Learning Score"]]
+
+
+def apply_learning_scores(scan, log_df):
+    scan = scan.copy()
+    stats = learning_stats(log_df)
+
+    if stats.empty:
+        scan["Learning Score"] = 50
+        scan["Historical Setup Trades"] = 0
+        scan["Historical Setup Win Rate %"] = 0.0
+        return scan
+
+    stats_small = stats.rename(columns={
+        "Setup": "Best Setup",
+        "Trades": "Historical Setup Trades",
+        "Win Rate %": "Historical Setup Win Rate %",
+    })[["Best Setup", "Historical Setup Trades", "Historical Setup Win Rate %", "Learning Score"]]
+
+    scan = scan.merge(stats_small, on="Best Setup", how="left")
+    scan["Learning Score"] = scan["Learning Score"].fillna(50)
+    scan["Historical Setup Trades"] = scan["Historical Setup Trades"].fillna(0).astype(int)
+    scan["Historical Setup Win Rate %"] = scan["Historical Setup Win Rate %"].fillna(0.0)
+
+    return scan
+
+
+def add_v29_scores(scan):
+    scan = scan.copy()
+
+    scan["Professional Score"] = (
+        (scan["Composite Score"] * 0.45)
+        + (scan["Earnings Score"] * 0.15)
+        + (scan["Premarket Score"] * 0.15)
+        + (scan["Learning Score"] * 0.10)
+        + (scan["Sector Rotation Score"] * 0.15)
+    ).round(1)
+
+    verdicts = []
+
+    for _, row in scan.iterrows():
+        verdict = row["Composite Verdict"]
+
+        # Earnings risk overrides.
+        timing = str(row.get("Earnings Timing", "")).lower()
+        if "reports" in timing and "bmo" in timing:
+            verdict = "AVOID / WATCH ONLY"
+
+        if row["Professional Score"] >= 80 and row["Signal"] in ["TRADE", "SMALL TRADE"] and row["OR Status"] != "Below OR Low":
+            verdict = "TRADE CANDIDATE"
+        elif row["Professional Score"] >= 68 and row["OR Status"] != "Below OR Low":
+            verdict = "WAIT FOR TRIGGER"
+
+        if row["Professional Score"] <= 42:
+            verdict = "AVOID / WATCH ONLY"
+
+        verdicts.append(verdict)
+
+    scan["Professional Verdict"] = verdicts
+
+    scan = scan.sort_values(
+        ["Professional Score", "Composite Score", "Premarket Score", "Earnings Score", "Sector Rotation Score"],
+        ascending=False
+    ).reset_index(drop=True)
+
+    return scan
+
+
+def v29_summary(scan):
+    if scan.empty or "Professional Score" not in scan.columns:
+        return "No v29 professional score available."
+
+    leader = scan.iloc[0]
+
+    lines = []
+    lines.append("V29 PROFESSIONAL LAYERS")
+    lines.append(
+        f"Top professional score: {leader['Ticker']} / {leader['Professional Score']} / "
+        f"{leader['Professional Verdict']}"
+    )
+    lines.append(
+        f"Earnings: {leader['Earnings Timing']} {leader['Earnings Date']} / score {leader['Earnings Score']} / {leader['Earnings Risk Note']}"
+    )
+    lines.append(
+        f"Premarket: gap {leader['Premarket Gap %']}% / RVOL {leader['Premarket RVOL']} / score {leader['Premarket Score']}"
+    )
+    lines.append(
+        f"Learning: setup {leader['Best Setup']} / score {leader['Learning Score']} / "
+        f"trades {leader['Historical Setup Trades']} / win rate {leader['Historical Setup Win Rate %']}%"
+    )
+
+    return "\n".join(lines)
+
+
 # ============================================================
 # PACKETS / SUMMARY
 # ============================================================
@@ -1151,6 +1487,7 @@ def sector_flow(scan):
     sec = scan.groupby("Sector").agg(
         Names=("Ticker", "count"),
         Tradeable=("Signal", lambda x: x.isin(["TRADE", "SMALL TRADE"]).sum()),
+        Avg_Professional=("Professional Score", "mean"),
         Avg_Composite=("Composite Score", "mean"),
         Avg_Sector_Rotation=("Sector Rotation Score", "mean"),
         Avg_Flow=("Money Flow Score", "mean"),
@@ -1161,10 +1498,10 @@ def sector_flow(scan):
         Avg_EV=("EV / Share", "mean"),
     ).reset_index()
 
-    for col in ["Avg_Composite", "Avg_Sector_Rotation", "Avg_Flow", "Avg_Catalyst", "Avg_External", "Avg_Setup", "Avg_RS", "Avg_EV"]:
+    for col in ["Avg_Professional", "Avg_Composite", "Avg_Sector_Rotation", "Avg_Flow", "Avg_Catalyst", "Avg_External", "Avg_Setup", "Avg_RS", "Avg_EV"]:
         sec[col] = sec[col].round(2)
 
-    return sec.sort_values(["Avg_Composite", "Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
+    return sec.sort_values(["Avg_Professional", "Avg_Composite", "Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
 
 
 def safe_records(df):
@@ -1175,7 +1512,7 @@ def safe_records(df):
 
 def build_snapshot(scan, market_df, light, regime, score, reason):
     tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
-    candidates = scan[scan["Composite Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])]
+    candidates = scan[scan["Professional Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])]
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
     return {
@@ -1207,7 +1544,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v28")
+    lines.append("TRADER BRIEFING v29")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -1216,6 +1553,7 @@ def make_trader_briefing(snapshot):
     lines.append("")
     lines.append(catalyst_summary(pd.DataFrame(snapshot["top_10"])))
     lines.append(multi_source_summary(pd.DataFrame(snapshot["top_10"])))
+    lines.append(v29_summary(pd.DataFrame(snapshot["top_10"])))
     lines.append("")
 
     if candidate:
@@ -1224,13 +1562,18 @@ def make_trader_briefing(snapshot):
         lines.append(f"Technical verdict: {candidate['App Verdict']}")
         lines.append(f"Catalyst-adjusted verdict: {candidate['Catalyst-Adjusted Verdict']}")
         lines.append(f"Composite verdict: {candidate['Composite Verdict']}")
+        lines.append(f"Professional verdict: {candidate['Professional Verdict']}")
         lines.append(f"Signal: {candidate['Signal']}")
         lines.append(f"Tier/setup: {candidate['Tier']} {candidate['Best Setup']}")
         lines.append(f"Pattern: {candidate['Pattern']}")
+        lines.append(f"Professional Score: {candidate['Professional Score']}")
         lines.append(f"Composite Score: {candidate['Composite Score']}")
         lines.append(f"Total Opportunity Score: {candidate['Total Opportunity Score']}")
         lines.append(f"Sector Rotation Score: {candidate['Sector Rotation Score']}")
         lines.append(f"External Score: {candidate['External Score']} / {candidate['External Source']} / {candidate['External Note']}")
+        lines.append(f"Earnings: {candidate['Earnings Timing']} / {candidate['Earnings Date']} / score {candidate['Earnings Score']} / {candidate['Earnings Risk Note']}")
+        lines.append(f"Premarket: gap {candidate['Premarket Gap %']}% / RVOL {candidate['Premarket RVOL']} / score {candidate['Premarket Score']} / {candidate['Premarket Note']}")
+        lines.append(f"Learning: score {candidate['Learning Score']} / setup trades {candidate['Historical Setup Trades']} / win rate {candidate['Historical Setup Win Rate %']}%")
         lines.append(f"Money Flow Score: {candidate['Money Flow Score']}")
         lines.append(f"Catalyst Score: {candidate['Catalyst Score']}")
         lines.append(f"Catalyst: {candidate['Catalyst Type']} / {candidate['Catalyst Freshness']} / {candidate['Catalyst Note']}")
@@ -1289,7 +1632,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v28 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v29 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -1301,8 +1644,8 @@ def make_full_packet(snapshot):
     lines.append("TOP 10 RANKED")
     for i, row in enumerate(snapshot["top_10"], 1):
         lines.append(
-            f"{i}. {row['Ticker']} | {row['Composite Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
-            f"Composite {row['Composite Score']} | Total {row['Total Opportunity Score']} | Catalyst {row['Catalyst Score']} | Sector {row['Sector Rotation Score']} | External {row['External Score']} | Flow {row['Money Flow Score']} | Setup {row['Best Score']} | RS {row['RS Score']} | "
+            f"{i}. {row['Ticker']} | {row['Professional Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
+            f"Professional {row['Professional Score']} | Composite {row['Composite Score']} | Total {row['Total Opportunity Score']} | Catalyst {row['Catalyst Score']} | Earnings {row['Earnings Score']} | Premarket {row['Premarket Score']} | Learning {row['Learning Score']} | Sector {row['Sector Rotation Score']} | External {row['External Score']} | Flow {row['Money Flow Score']} | Setup {row['Best Score']} | RS {row['RS Score']} | "
             f"EV {row['EV / Share']} | VWAP {row['Above VWAP']} | OR {row['OR Zone']} | Reason: {row['Reason']}"
         )
 
@@ -1365,7 +1708,7 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v28")
+st.title("Deon's Trader Dashboard v29")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -1397,6 +1740,26 @@ external_signal_text = st.sidebar.text_area(
 )
 with st.sidebar.expander("External signal examples"):
     st.code("NVDA | FinancialJuice | 75 | semis supported by macro headline\nPLTR | X sentiment | 80 | AI contract chatter\nAMD | TradingView | 70 | strong premarket relative volume")
+
+st.sidebar.subheader("Earnings Timing")
+earnings_text = st.sidebar.text_area(
+    "Optional: TICKER | Timing | Date | Note",
+    value="",
+    height=130,
+    help="Example: NVDA | Reports AMC | 2026-06-10 | earnings after close"
+)
+with st.sidebar.expander("Earnings examples"):
+    st.code("NVDA | Reports AMC | 2026-06-10 | earnings after close\nCRDO | Reported AMC | 2026-06-03 | beat and raised guidance\nAMD | No event | | no near-term report")
+
+st.sidebar.subheader("Premarket Activity")
+premarket_text = st.sidebar.text_area(
+    "Optional: TICKER | Gap % | Premarket RVOL | Note",
+    value="",
+    height=130,
+    help="Example: CRDO | 4.2 | 3.5 | earnings gap with volume"
+)
+with st.sidebar.expander("Premarket examples"):
+    st.code("CRDO | 4.2 | 3.5 | earnings gap with volume\nNVDA | 1.1 | 1.4 | modest premarket activity\nPLTR | -2.2 | 2.1 | weak gap with volume")
 cash = st.sidebar.number_input("Cash available", min_value=0.0, value=855.0, step=25.0)
 risk_pct = st.sidebar.number_input("Base risk per trade %", min_value=0.25, max_value=10.0, value=3.0, step=0.25) / 100
 
@@ -1413,7 +1776,7 @@ light, regime, market_score, market_reason = market_state(market_df)
 
 symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
-with st.spinner("Scanning technicals, money flow, automated news, sector rotation, and external signals..."):
+with st.spinner("Scanning technicals, news, sector rotation, earnings timing, premarket activity, and learning data..."):
     base_scan = run_scan(symbols, light, cash, risk_pct)
     manual_catalyst_df = parse_catalyst_text(catalyst_text)
     auto_catalyst_df = build_auto_catalysts(symbols, enabled=auto_news_enabled, max_symbols=auto_news_limit)
@@ -1423,6 +1786,13 @@ with st.spinner("Scanning technicals, money flow, automated news, sector rotatio
     scan = apply_external_signals(scan, external_df)
     scan = add_sector_rotation_scores(scan)
     scan = add_multi_source_scores(scan)
+    earnings_df = parse_earnings_text(earnings_text)
+    premarket_df = parse_premarket_text(premarket_text)
+    learning_log = load_learning_log()
+    scan = apply_earnings_timing(scan, earnings_df)
+    scan = apply_premarket_activity(scan, premarket_df)
+    scan = apply_learning_scores(scan, learning_log)
+    scan = add_v29_scores(scan)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
@@ -1440,14 +1810,14 @@ manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if
 # ============================================================
 
 st.header("Step 1 — Copy This Trader Briefing")
-st.success("This is the main v28 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
+st.success("This is the main v29 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
 st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v28.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v28.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v28.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v29.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v29.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v29.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -1455,7 +1825,7 @@ tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
 if top_candidate:
     if top_candidate["Composite Verdict"] == "TRADE CANDIDATE":
-        st.success(f"TRADE CANDIDATE: {top_candidate['Ticker']} — multi-source confirmed. Paste the briefing into ChatGPT for final verification.")
+        st.success(f"TRADE CANDIDATE: {top_candidate['Ticker']} — professional-layer confirmed. Paste the briefing into ChatGPT for final verification.")
     elif top_candidate["Composite Verdict"] == "WAIT FOR TRIGGER":
         st.warning(f"WAIT FOR TRIGGER: {top_candidate['Ticker']} is close but needs confirmation.")
     else:
@@ -1508,8 +1878,8 @@ d.metric("Top Flow Score", top_flow["Money Flow Score"])
 st.subheader("Top 3 Money Flow")
 st.dataframe(
     scan.head(3)[[
-        "Ticker", "Sector", "Composite Verdict", "Signal", "Tier", "Best Setup",
-        "Composite Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Stop",
+        "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+        "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Stop",
         "Target 1", "Shares", "Position $", "Dollar Risk", "Chart Needed"
     ]],
     use_container_width=True,
@@ -1529,6 +1899,8 @@ tabs = st.tabs([
     "Participation",
     "Catalysts",
     "Multi-Source",
+    "Earnings/Premarket",
+    "Learning Log",
     "Charts",
 ])
 
@@ -1538,8 +1910,8 @@ with tabs[0]:
     ranked.insert(0, "Rank", range(1, len(ranked) + 1))
     st.dataframe(
         ranked[[
-            "Rank", "Ticker", "Sector", "Composite Verdict", "Signal", "Tier", "Best Setup",
-            "Composite Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
+            "Rank", "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+            "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
             "EV / Share", "Position $", "Dollar Risk", "Above VWAP", "OR Zone", "RS Score"
         ]],
         use_container_width=True,
@@ -1556,7 +1928,7 @@ with tabs[1]:
     row = scan[scan["Ticker"] == selected].iloc[0]
 
     if row["Composite Verdict"] == "TRADE CANDIDATE":
-        st.success(f"{row['Ticker']} is a multi-source trade candidate pending ChatGPT/chart verification.")
+        st.success(f"{row['Ticker']} is a professional-layer trade candidate pending ChatGPT/chart verification.")
     elif row["Composite Verdict"] == "WAIT FOR TRIGGER":
         st.warning(f"{row['Ticker']} is close, but waiting for trigger.")
     else:
@@ -1567,7 +1939,7 @@ with tabs[1]:
     m2.metric("Verdict", row["Composite Verdict"])
     m3.metric("Setup", row["Best Setup"])
     m4.metric("Tier", row["Tier"])
-    m5.metric("Composite", row["Composite Score"])
+    m5.metric("Professional", row["Professional Score"])
 
     p1, p2, p3, p4 = st.columns(4)
     p1.metric("Entry Ref", f"${row['Price']:.2f}")
@@ -1590,7 +1962,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v28.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v29.json", mime="application/json")
 
 with tabs[3]:
     st.header("Sector Flow")
@@ -1605,8 +1977,8 @@ with tabs[4]:
     st.header("Engine Scores")
     st.dataframe(
         scan[[
-            "Ticker", "Sector", "Composite Verdict", "Signal", "Tier", "Best Setup",
-            "Composite Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "ORB Score", "VWAP Score", "Gap Score",
+            "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+            "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "ORB Score", "VWAP Score", "Gap Score",
             "Momentum Score", "Daily Score", "RS Score", "EV / Share"
         ]],
         use_container_width=True,
@@ -1659,7 +2031,7 @@ with tabs[7]:
 
 with tabs[8]:
     st.header("Multi-Source Intelligence")
-    st.write("v28 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
+    st.write("v29 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
     st.dataframe(
         scan[[
             "Ticker", "Composite Verdict", "Composite Score",
@@ -1672,9 +2044,72 @@ with tabs[8]:
         height=560,
     )
     st.subheader("Scoring weights")
-    st.write("Composite Score = 25% Technical + 25% Money Flow + 20% News/Catalyst + 20% Sector Rotation + 10% External Signals")
+    st.write("Professional Score = 45% Composite + 15% Earnings + 15% Premarket + 10% Learning + 15% Sector Rotation. Composite still blends technicals, money flow, news, sector, and external signals.")
 
 with tabs[9]:
+    st.header("Earnings & Premarket Risk")
+    st.write("Use this tab to see event risk and premarket participation. Manual inputs come from the sidebar.")
+    st.dataframe(
+        scan[[
+            "Ticker", "Professional Verdict", "Professional Score",
+            "Earnings Timing", "Earnings Date", "Earnings Score", "Earnings Risk Note", "Earnings Note",
+            "Premarket Gap %", "Premarket RVOL", "Premarket Score", "Premarket Note",
+            "Signal", "Best Setup", "Price"
+        ]],
+        use_container_width=True,
+        height=560,
+    )
+
+with tabs[10]:
+    st.header("Trade Outcome Learning")
+    st.write("Record closed trades here so the dashboard can learn which setup types are actually working for you.")
+    learning_log_current = load_learning_log()
+    stats = learning_stats(learning_log_current)
+    st.subheader("Learning Stats by Setup")
+    st.dataframe(stats, use_container_width=True)
+
+    with st.form("learning_form", clear_on_submit=True):
+        c1, c2, c3, c4 = st.columns(4)
+        l_date = c1.date_input("Date", value=date.today())
+        l_ticker = c2.text_input("Ticker")
+        l_setup = c3.selectbox("Setup", ["ORB", "VWAP", "Gap", "Momentum", "Daily", "Other"])
+        l_verdict = c4.selectbox("Verdict", ["TRADE CANDIDATE", "WAIT FOR TRIGGER", "AVOID / WATCH ONLY"])
+
+        c5, c6, c7, c8 = st.columns(4)
+        l_score = c5.number_input("Composite/Professional Score", min_value=0.0, max_value=100.0, value=50.0, step=0.1)
+        l_entry = c6.number_input("Entry", min_value=0.0, step=0.01)
+        l_exit = c7.number_input("Exit", min_value=0.0, step=0.01)
+        l_shares = c8.number_input("Shares", min_value=0.0, step=0.0001, format="%.6f")
+
+        c9, c10 = st.columns(2)
+        l_mistake = c9.selectbox("Mistake", ["None", "Chased", "Ignored stop", "Sold too early", "No trigger", "Oversized", "Revenge trade"])
+        l_notes = c10.text_input("Notes")
+
+        if st.form_submit_button("Save Learning Trade"):
+            if l_ticker.strip() and l_entry > 0 and l_exit > 0 and l_shares > 0:
+                pnl = (l_exit - l_entry) * l_shares
+                ret = ((l_exit / l_entry) - 1) * 100
+                row = {
+                    "Date": l_date.isoformat(),
+                    "Ticker": l_ticker.strip().upper(),
+                    "Setup": l_setup,
+                    "Verdict": l_verdict,
+                    "Composite Score": round(l_score, 1),
+                    "Entry": round(l_entry, 2),
+                    "Exit": round(l_exit, 2),
+                    "Shares": round(l_shares, 6),
+                    "P/L": round(pnl, 2),
+                    "Return %": round(ret, 2),
+                    "Mistake": l_mistake,
+                    "Notes": l_notes,
+                }
+                learning_log_current = pd.concat([learning_log_current, pd.DataFrame([row])], ignore_index=True)
+                save_learning_log(learning_log_current)
+                st.success("Saved. Click Refresh now.")
+            else:
+                st.error("Ticker, entry, exit, and shares are required.")
+
+with tabs[11]:
     st.header("Charts")
     default_chart = top_candidate["Ticker"] if top_candidate else scan.iloc[0]["Ticker"]
     tickers = scan["Ticker"].tolist()
@@ -1688,4 +2123,4 @@ with tabs[9]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v28 adds Multi-Source Intelligence: technicals, automated news, manual external signals, sector rotation, and composite opportunity ranking.")
+st.caption("v29 adds Earnings Timing, Premarket Activity, and Trade Outcome Learning on top of the multi-source engine.")
