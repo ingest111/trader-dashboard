@@ -8,8 +8,8 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v25
-# 10/10 WORKFLOW BUILD
+# DEON'S TRADER DASHBOARD v26
+# CATALYST & NEWS ENGINE BUILD
 #
 # Goal:
 # - Make the "10/10" workflow happen inside the app.
@@ -20,7 +20,7 @@ import yfinance as yf
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v25", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v26", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -521,6 +521,181 @@ def run_scan(symbols, market_light, cash, risk_pct):
     ).reset_index(drop=True)
 
 
+
+# ============================================================
+# CATALYST / NEWS ENGINE
+# ============================================================
+
+CATALYST_WEIGHTS = {
+    "None / Unknown": 0,
+    "Earnings beat": 35,
+    "Earnings miss": -30,
+    "Raised guidance": 35,
+    "Lowered guidance": -35,
+    "Analyst upgrade": 22,
+    "Analyst downgrade": -25,
+    "Price target raise": 14,
+    "Price target cut": -18,
+    "Major AI news": 28,
+    "Major contract / partnership": 26,
+    "Product launch": 16,
+    "Sector sympathy strength": 14,
+    "Sector sympathy weakness": -16,
+    "Legal / regulatory risk": -30,
+    "Dilution / offering risk": -35,
+    "Management issue": -22,
+    "Rumor / unconfirmed": 6,
+}
+
+def parse_catalyst_text(text):
+    """
+    Expected format:
+    TICKER | catalyst type | freshness | note
+    Example:
+    CRDO | Raised guidance | Today | earnings beat and raised outlook
+    """
+    rows = []
+    if not text or not text.strip():
+        return pd.DataFrame(columns=["Ticker", "Catalyst Type", "Freshness", "Catalyst Note"])
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+
+        ticker = parts[0].upper() if len(parts) >= 1 else ""
+        catalyst_type = parts[1] if len(parts) >= 2 else "None / Unknown"
+        freshness = parts[2] if len(parts) >= 3 else "Today"
+        note = parts[3] if len(parts) >= 4 else ""
+
+        if ticker:
+            rows.append({
+                "Ticker": ticker,
+                "Catalyst Type": catalyst_type,
+                "Freshness": freshness,
+                "Catalyst Note": note,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def catalyst_freshness_multiplier(freshness):
+    f = str(freshness).strip().lower()
+
+    if f in ["today", "same day", "premarket", "intraday"]:
+        return 1.00
+    if f in ["yesterday", "1 day", "last night"]:
+        return 0.80
+    if f in ["this week", "2-5 days", "recent"]:
+        return 0.55
+    if f in ["older", "last week", "stale"]:
+        return 0.25
+
+    return 0.60
+
+
+def catalyst_score(catalyst_type, freshness):
+    base = CATALYST_WEIGHTS.get(str(catalyst_type).strip(), 0)
+    mult = catalyst_freshness_multiplier(freshness)
+    raw = base * mult
+
+    # Convert into 0-100 scale where 50 = neutral.
+    return int(max(0, min(100, round(50 + raw))))
+
+
+def catalyst_bias(catalyst_score_value):
+    # Converts 0-100 catalyst score into ranking adjustment.
+    # Neutral 50 = 0. Positive catalysts help; negative catalysts hurt.
+    return round((catalyst_score_value - 50) * 0.45, 2)
+
+
+def apply_catalysts(scan, catalyst_df):
+    scan = scan.copy()
+
+    if catalyst_df is None or catalyst_df.empty:
+        scan["Catalyst Type"] = "None / Unknown"
+        scan["Catalyst Freshness"] = "None"
+        scan["Catalyst Note"] = ""
+        scan["Catalyst Score"] = 50
+        scan["Catalyst Bias"] = 0.0
+    else:
+        catalyst_df = catalyst_df.copy()
+        catalyst_df["Ticker"] = catalyst_df["Ticker"].astype(str).str.upper().str.strip()
+
+        # If duplicates exist, keep the last entered line so user can override quickly.
+        catalyst_df = catalyst_df.drop_duplicates(subset=["Ticker"], keep="last")
+
+        scan = scan.merge(catalyst_df, how="left", on="Ticker")
+        scan["Catalyst Type"] = scan["Catalyst Type"].fillna("None / Unknown")
+        scan["Freshness"] = scan["Freshness"].fillna("None")
+        scan["Catalyst Note"] = scan["Catalyst Note"].fillna("")
+
+        scan["Catalyst Score"] = scan.apply(
+            lambda r: catalyst_score(r["Catalyst Type"], r["Freshness"]),
+            axis=1,
+        )
+        scan["Catalyst Freshness"] = scan["Freshness"]
+        scan = scan.drop(columns=["Freshness"], errors="ignore")
+        scan["Catalyst Bias"] = scan["Catalyst Score"].apply(catalyst_bias)
+
+    scan["Total Opportunity Score"] = (
+        (scan["Money Flow Score"] * 0.45)
+        + (scan["Best Score"] * 0.25)
+        + (scan["RS Score"] * 0.15)
+        + (scan["Catalyst Score"] * 0.15)
+    ).round(1)
+
+    # Catalyst upgrades/downgrades the app verdict only when technical structure is not broken.
+    upgraded = []
+    for _, row in scan.iterrows():
+        verdict = row["App Verdict"]
+
+        if row["Catalyst Score"] >= 75 and row["Money Flow Score"] >= 58 and row["OR Status"] != "Below OR Low":
+            if verdict == "AVOID / WATCH ONLY":
+                verdict = "WAIT FOR TRIGGER"
+            elif verdict == "WAIT FOR TRIGGER" and row["Signal"] in ["TRADE", "SMALL TRADE"]:
+                verdict = "TRADE CANDIDATE"
+
+        if row["Catalyst Score"] <= 25:
+            if verdict == "TRADE CANDIDATE":
+                verdict = "WAIT FOR TRIGGER"
+            elif verdict == "WAIT FOR TRIGGER":
+                verdict = "AVOID / WATCH ONLY"
+
+        upgraded.append(verdict)
+
+    scan["Catalyst-Adjusted Verdict"] = upgraded
+
+    scan = scan.sort_values(
+        ["Total Opportunity Score", "Catalyst Score", "Money Flow Score", "Best Score", "RS Score"],
+        ascending=False,
+    ).reset_index(drop=True)
+
+    return scan
+
+
+def catalyst_summary(scan):
+    if scan.empty or "Catalyst Score" not in scan.columns:
+        return "No catalyst data entered."
+
+    catalyst_names = scan[scan["Catalyst Type"] != "None / Unknown"].copy()
+
+    if catalyst_names.empty:
+        return "No manual catalysts entered. Rankings are technical/money-flow only."
+
+    lines = []
+    lines.append("CATALYST SUMMARY")
+    for _, row in catalyst_names.head(10).iterrows():
+        lines.append(
+            f"- {row['Ticker']}: {row['Catalyst Type']} / {row['Catalyst Freshness']} "
+            f"/ score {row['Catalyst Score']} / note: {row['Catalyst Note']}"
+        )
+
+    return "\n".join(lines)
+
+
 # ============================================================
 # PACKETS / SUMMARY
 # ============================================================
@@ -549,7 +724,7 @@ def safe_records(df):
 
 def build_snapshot(scan, market_df, light, regime, score, reason):
     tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
-    candidates = scan[scan["App Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])]
+    candidates = scan[scan["Catalyst-Adjusted Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])]
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
     return {
@@ -581,22 +756,28 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v25")
+    lines.append("TRADER BRIEFING v26")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
     lines.append(f"Tradeable names: {snapshot['tradeable_count']} of {snapshot['scanned_count']}")
     lines.append(f"Close candidates needing chart review: {snapshot['candidate_count']} of {snapshot['scanned_count']}")
     lines.append("")
+    lines.append(catalyst_summary(pd.DataFrame(snapshot["top_10"])))
+    lines.append("")
 
     if candidate:
         lines.append("PRIMARY CANDIDATE")
         lines.append(f"Ticker: {candidate['Ticker']}")
-        lines.append(f"Dashboard verdict: {candidate['App Verdict']}")
+        lines.append(f"Technical verdict: {candidate['App Verdict']}")
+        lines.append(f"Catalyst-adjusted verdict: {candidate['Catalyst-Adjusted Verdict']}")
         lines.append(f"Signal: {candidate['Signal']}")
         lines.append(f"Tier/setup: {candidate['Tier']} {candidate['Best Setup']}")
         lines.append(f"Pattern: {candidate['Pattern']}")
+        lines.append(f"Total Opportunity Score: {candidate['Total Opportunity Score']}")
         lines.append(f"Money Flow Score: {candidate['Money Flow Score']}")
+        lines.append(f"Catalyst Score: {candidate['Catalyst Score']}")
+        lines.append(f"Catalyst: {candidate['Catalyst Type']} / {candidate['Catalyst Freshness']} / {candidate['Catalyst Note']}")
         lines.append(f"Best Setup Score: {candidate['Best Score']}")
         lines.append(f"Probability: {candidate['Probability %']}%")
         lines.append(f"Entry reference: {candidate['Price']}")
@@ -649,7 +830,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v25 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v26 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -661,8 +842,8 @@ def make_full_packet(snapshot):
     lines.append("TOP 10 RANKED")
     for i, row in enumerate(snapshot["top_10"], 1):
         lines.append(
-            f"{i}. {row['Ticker']} | {row['App Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
-            f"Flow {row['Money Flow Score']} | Setup {row['Best Score']} | RS {row['RS Score']} | "
+            f"{i}. {row['Ticker']} | {row['Catalyst-Adjusted Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
+            f"Total {row['Total Opportunity Score']} | Catalyst {row['Catalyst Score']} | Flow {row['Money Flow Score']} | Setup {row['Best Score']} | RS {row['RS Score']} | "
             f"EV {row['EV / Share']} | VWAP {row['Above VWAP']} | OR {row['OR Zone']} | Reason: {row['Reason']}"
         )
 
@@ -725,12 +906,23 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v25")
+st.title("Deon's Trader Dashboard v26")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
 watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST), height=90)
 scan_text = st.sidebar.text_area("Scanner Universe", ",".join(DEFAULT_SCAN), height=170)
+
+st.sidebar.subheader("Manual News / Catalyst Input")
+catalyst_text = st.sidebar.text_area(
+    "One per line: TICKER | Catalyst Type | Freshness | Note",
+    value="",
+    height=150,
+    help="Example: CRDO | Raised guidance | Today | earnings beat and raised outlook"
+)
+
+with st.sidebar.expander("Allowed catalyst types"):
+    st.write(", ".join(CATALYST_WEIGHTS.keys()))
 cash = st.sidebar.number_input("Cash available", min_value=0.0, value=855.0, step=25.0)
 risk_pct = st.sidebar.number_input("Base risk per trade %", min_value=0.25, max_value=10.0, value=3.0, step=0.25) / 100
 
@@ -747,8 +939,10 @@ light, regime, market_score, market_reason = market_state(market_df)
 
 symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
-with st.spinner("Scanning money flow and building ChatGPT briefing..."):
-    scan = run_scan(symbols, light, cash, risk_pct)
+with st.spinner("Scanning money flow, catalysts, and building ChatGPT briefing..."):
+    base_scan = run_scan(symbols, light, cash, risk_pct)
+    catalyst_df = parse_catalyst_text(catalyst_text)
+    scan = apply_catalysts(base_scan, catalyst_df)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
@@ -767,18 +961,18 @@ st.success("This is the main v25 workflow. Copy this box into ChatGPT first. Do 
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v25.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v25.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v25.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v26.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v26.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v26.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
 tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
 if top_candidate:
-    if top_candidate["App Verdict"] == "TRADE CANDIDATE":
-        st.success(f"TRADE CANDIDATE: {top_candidate['Ticker']} — paste the briefing into ChatGPT for final verification.")
-    elif top_candidate["App Verdict"] == "WAIT FOR TRIGGER":
+    if top_candidate["Catalyst-Adjusted Verdict"] == "TRADE CANDIDATE":
+        st.success(f"TRADE CANDIDATE: {top_candidate['Ticker']} — catalyst-adjusted. Paste the briefing into ChatGPT for final verification.")
+    elif top_candidate["Catalyst-Adjusted Verdict"] == "WAIT FOR TRIGGER":
         st.warning(f"WAIT FOR TRIGGER: {top_candidate['Ticker']} is close but needs confirmation.")
     else:
         st.error("AVOID / WATCH ONLY")
@@ -830,8 +1024,8 @@ d.metric("Top Flow Score", top_flow["Money Flow Score"])
 st.subheader("Top 3 Money Flow")
 st.dataframe(
     scan.head(3)[[
-        "Ticker", "Sector", "App Verdict", "Signal", "Tier", "Best Setup",
-        "Money Flow Score", "Best Score", "Reason", "Price", "Stop",
+        "Ticker", "Sector", "Catalyst-Adjusted Verdict", "Signal", "Tier", "Best Setup",
+        "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "Money Flow Score", "Best Score", "Reason", "Price", "Stop",
         "Target 1", "Shares", "Position $", "Dollar Risk", "Chart Needed"
     ]],
     use_container_width=True,
@@ -849,6 +1043,7 @@ tabs = st.tabs([
     "Engine Scores",
     "No Trade / Watch",
     "Participation",
+    "Catalysts",
     "Charts",
 ])
 
@@ -858,8 +1053,8 @@ with tabs[0]:
     ranked.insert(0, "Rank", range(1, len(ranked) + 1))
     st.dataframe(
         ranked[[
-            "Rank", "Ticker", "Sector", "App Verdict", "Signal", "Tier", "Best Setup",
-            "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
+            "Rank", "Ticker", "Sector", "Catalyst-Adjusted Verdict", "Signal", "Tier", "Best Setup",
+            "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
             "EV / Share", "Position $", "Dollar Risk", "Above VWAP", "OR Zone", "RS Score"
         ]],
         use_container_width=True,
@@ -875,16 +1070,16 @@ with tabs[1]:
     selected = st.selectbox("Select opportunity", scan["Ticker"].tolist())
     row = scan[scan["Ticker"] == selected].iloc[0]
 
-    if row["App Verdict"] == "TRADE CANDIDATE":
-        st.success(f"{row['Ticker']} is a trade candidate pending ChatGPT/chart verification.")
-    elif row["App Verdict"] == "WAIT FOR TRIGGER":
+    if row["Catalyst-Adjusted Verdict"] == "TRADE CANDIDATE":
+        st.success(f"{row['Ticker']} is a catalyst-adjusted trade candidate pending ChatGPT/chart verification.")
+    elif row["Catalyst-Adjusted Verdict"] == "WAIT FOR TRIGGER":
         st.warning(f"{row['Ticker']} is close, but waiting for trigger.")
     else:
         st.error(f"{row['Ticker']} is not trade-ready.")
 
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Ticker", row["Ticker"])
-    m2.metric("Verdict", row["App Verdict"])
+    m2.metric("Verdict", row["Catalyst-Adjusted Verdict"])
     m3.metric("Setup", row["Best Setup"])
     m4.metric("Tier", row["Tier"])
     m5.metric("Flow", row["Money Flow Score"])
@@ -902,6 +1097,7 @@ with tabs[1]:
     r4.metric("Reward/Risk", f"{row['Reward/Risk']:.2f}")
 
     st.write(f"Reason: **{row['Reason']}**")
+    st.write(f"Catalyst: **{row['Catalyst Type']}** / **{row['Catalyst Freshness']}** / Score **{row['Catalyst Score']}**")
     st.write(f"VWAP: **{row['Above VWAP']}** at {row['VWAP']}")
     st.write(f"Opening Range: **{row['OR Status']} / {row['OR Zone']}**")
     st.write(f"Chart screenshot needed: **{row['Chart Needed']}**")
@@ -909,7 +1105,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v25.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v26.json", mime="application/json")
 
 with tabs[3]:
     st.header("Sector Flow")
@@ -924,8 +1120,8 @@ with tabs[4]:
     st.header("Engine Scores")
     st.dataframe(
         scan[[
-            "Ticker", "Sector", "App Verdict", "Signal", "Tier", "Best Setup",
-            "Money Flow Score", "Best Score", "ORB Score", "VWAP Score", "Gap Score",
+            "Ticker", "Sector", "Catalyst-Adjusted Verdict", "Signal", "Tier", "Best Setup",
+            "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "Money Flow Score", "Best Score", "ORB Score", "VWAP Score", "Gap Score",
             "Momentum Score", "Daily Score", "RS Score", "EV / Share"
         ]],
         use_container_width=True,
@@ -937,7 +1133,7 @@ with tabs[5]:
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
     st.dataframe(
         no_trade[[
-            "Ticker", "App Verdict", "Signal", "Tier", "Best Setup", "Money Flow Score",
+            "Ticker", "Catalyst-Adjusted Verdict", "Signal", "Tier", "Best Setup", "Total Opportunity Score", "Catalyst Score", "Money Flow Score",
             "Best Score", "Reason", "Price", "EV / Share", "Reward/Risk",
             "Above VWAP", "OR Status", "OR Zone", "RS Score"
         ]],
@@ -962,6 +1158,21 @@ with tabs[6]:
         st.error("Low participation. Conditions are still selective.")
 
 with tabs[7]:
+    st.header("Catalyst & News Engine")
+    st.write("Manual catalyst entries affect Total Opportunity Score and Catalyst-Adjusted Verdict.")
+    st.dataframe(
+        scan[[
+            "Ticker", "Catalyst-Adjusted Verdict", "Catalyst Type", "Catalyst Freshness",
+            "Catalyst Score", "Catalyst Bias", "Catalyst Note",
+            "Total Opportunity Score", "Money Flow Score", "Best Setup", "Signal"
+        ]],
+        use_container_width=True,
+        height=520,
+    )
+    st.subheader("How to enter catalysts")
+    st.code("CRDO | Raised guidance | Today | earnings beat and raised outlook\nPLTR | Major contract / partnership | Yesterday | defense AI contract\nNVDA | Analyst upgrade | Today | price target raised")
+
+with tabs[8]:
     st.header("Charts")
     default_chart = top_candidate["Ticker"] if top_candidate else scan.iloc[0]["Ticker"]
     tickers = scan["Ticker"].tolist()
@@ -975,4 +1186,4 @@ with tabs[7]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v25 turns the 10/10 workflow into the app: copy briefing first, chart only when needed, decision format is TRADE / WAIT / AVOID.")
+st.caption("v26 adds a Catalyst & News Engine: copy briefing first, include catalyst context, chart only when needed, decision format is TRADE / WAIT / AVOID.")
