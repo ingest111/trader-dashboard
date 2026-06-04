@@ -8,16 +8,18 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v19.2
-# Opportunity Expansion Engine
+# DEON'S TRADER DASHBOARD v20
+# MONEY FLOW ENGINE
 #
-# Goal:
-# - Reduce no-trade days by scoring multiple setup types
-# - Keep risk controlled through A+/A/B/C tier sizing
-# - Produce 3 best opportunities, not just 1 all-or-nothing answer
+# Mission:
+# - Find where money is flowing today
+# - Rank strongest sectors
+# - Rank strongest stocks inside strongest sectors
+# - Preserve v19.2 opportunity engines
+# - Produce fast "top 3 to focus on" list
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v19.2", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v20", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -28,7 +30,7 @@ DEFAULT_SCAN = [
     "SMCI", "DELL", "ORCL", "CEG", "VRT", "ANET",
 ]
 
-DEFAULT_WATCHLIST = ["NVDA", "AMD", "AVGO", "MU", "TSM", "PLTR", "CRDO", "META"]
+DEFAULT_WATCHLIST = ["NVDA", "AMD", "AVGO", "MU", "TSM", "PLTR", "CRDO", "META", "RDDT", "HIMS"]
 
 SECTOR = {
     "NVDA": "Semis", "AMD": "Semis", "AVGO": "Semis", "ARM": "Semis",
@@ -40,7 +42,7 @@ SECTOR = {
     "TSLA": "High Beta", "ORCL": "Software", "CEG": "Energy",
 }
 
-JOURNAL_FILE = "trade_journal_v19_2.csv"
+JOURNAL_FILE = "trade_journal_v20.csv"
 
 
 # ============================================================
@@ -154,21 +156,54 @@ def market_state(mdf):
         arr = mdf.loc[mdf["Market"] == sym, col].values
         return num(arr[0]) if len(arr) else 0.0
 
+    spy_1d = v("SPY", "1D %")
+    qqq_1d = v("QQQ", "1D %")
+    spy_5d = v("SPY", "5D %")
+    qqq_5d = v("QQQ", "5D %")
+    vix_1d = v("^VIX", "1D %")
+
     score = 50
-    score += 15 if v("SPY", "1D %") >= 0 else -15
-    score += 15 if v("QQQ", "1D %") >= 0 else -15
-    score += 10 if v("SPY", "5D %") >= 0 else -10
-    score += 10 if v("QQQ", "5D %") >= 0 else -10
-    score += 10 if v("^VIX", "1D %") <= 0 else -20
+
+    # v20 softer market scoring: a mildly red index day should not instantly kill trades.
+    if spy_1d >= 0:
+        score += 12
+    elif spy_1d > -0.75:
+        score -= 5
+    else:
+        score -= 15
+
+    if qqq_1d >= 0:
+        score += 12
+    elif qqq_1d > -0.75:
+        score -= 5
+    else:
+        score -= 15
+
+    if spy_5d >= 0:
+        score += 8
+    else:
+        score -= 8
+
+    if qqq_5d >= 0:
+        score += 8
+    else:
+        score -= 8
+
+    if vix_1d <= 0:
+        score += 10
+    elif vix_1d < 3:
+        score -= 5
+    else:
+        score -= 15
 
     score = int(max(0, min(100, score)))
 
-    if score >= 70:
-        return "GREEN", "Bullish", score, "Indexes constructive and volatility calm"
-    if score >= 45:
-        return "YELLOW", "Mixed", score, "Mixed tape; be selective"
+    if score >= 65:
+        return "GREEN", "Bullish", score, "Risk-on backdrop"
+    if score >= 35:
+        return "YELLOW", "Mixed", score, "Trade selectively; money flow matters more than index direction"
 
-    return "RED", "Defensive", score, "Weak indexes or elevated volatility"
+    return "RED", "Defensive", score, "Weak tape; only strongest money-flow names qualify"
 
 
 # ============================================================
@@ -190,7 +225,6 @@ def intraday(ticker):
         }
 
     current = num(df["Close"].iloc[-1])
-
     typical = (df["High"] + df["Low"] + df["Close"]) / 3
     volume = num(df["Volume"].sum())
 
@@ -272,7 +306,7 @@ def gap_pct(df):
 
 
 # ============================================================
-# OPPORTUNITY ENGINES
+# SETUP ENGINES
 # ============================================================
 
 def score_orb(intra, above20, above50, rel_vol, rs, market_light):
@@ -311,7 +345,7 @@ def score_orb(intra, above20, above50, rel_vol, rs, market_light):
     if market_light == "GREEN":
         score += 5
     elif market_light == "RED":
-        score -= 10
+        score -= 5
 
     if intra["OR Status"] == "Below OR Low":
         score -= 35
@@ -349,7 +383,7 @@ def score_vwap(intra, above20, above50, dist20, rs, rel_vol, market_light):
         score += 5
 
     if market_light == "RED":
-        score -= 8
+        score -= 5
 
     return int(max(0, min(100, score)))
 
@@ -383,7 +417,7 @@ def score_gap(gap, intra, rel_vol, rs, market_light):
         score += 5
 
     if market_light == "RED":
-        score -= 10
+        score -= 5
 
     return int(max(0, min(100, score)))
 
@@ -431,7 +465,7 @@ def score_momentum(one_day, five_day, one_month, rs, above20, above50, rel_vol, 
     if market_light == "GREEN":
         score += 5
     elif market_light == "RED":
-        score -= 8
+        score -= 5
 
     return int(max(0, min(100, score)))
 
@@ -462,7 +496,7 @@ def score_daily_breakout(close, high20, near_high, breakout, above20, above50, r
     if market_light == "GREEN":
         score += 5
     elif market_light == "RED":
-        score -= 8
+        score -= 5
 
     return int(max(0, min(100, score)))
 
@@ -539,18 +573,15 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
     tier = tier_from_score(best_score)
     multiplier = risk_multiplier(tier)
 
-    if best_setup == "ORB":
-        pattern = "Opening Range Breakout"
-    elif best_setup == "VWAP":
-        pattern = "VWAP Reclaim / Hold"
-    elif best_setup == "Gap":
-        pattern = "Gap-and-Go"
-    elif best_setup == "Momentum":
-        pattern = "Relative Strength Continuation"
-    elif best_setup == "Daily":
-        pattern = "Daily Breakout"
-    else:
-        pattern = "No Clear Pattern"
+    pattern_map = {
+        "ORB": "Opening Range Breakout",
+        "VWAP": "VWAP Reclaim / Hold",
+        "Gap": "Gap-and-Go",
+        "Momentum": "Relative Strength Continuation",
+        "Daily": "Daily Breakout",
+    }
+
+    pattern = pattern_map.get(best_setup, "No Clear Pattern")
 
     stop = round(max(low10, close * 0.94), 2)
     risk_share = max(0, close - stop)
@@ -566,17 +597,16 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
     if risk_share > 0:
         ev = ((probability / 100) * (target1 - close)) - ((1 - probability / 100) * risk_share)
 
-    # v19.2: B setups are allowed with half-risk if EV is non-negative and not structurally broken.
+    # v20: allow B trades if money-flow score is strong, EV is not deeply negative, and structure is not broken.
     setup_is_valid = (
         tier in ["A+", "A", "B"]
-        and ev >= -0.05
+        and ev >= -0.10
         and risk_share > 0
-        and rr >= 1.25
+        and rr >= 1.20
         and intra["OR Status"] != "Below OR Low"
     )
 
-    # In RED market, only A/A+ are allowed unless user toggles aggressive mode.
-    if market_light == "RED" and tier == "B":
+    if market_light == "RED" and tier == "B" and rs < 60:
         setup_is_valid = False
 
     if setup_is_valid and tier in ["A+", "A"]:
@@ -589,7 +619,6 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
         signal = "NO TRADE"
 
     max_risk = cash * risk_pct * multiplier
-
     shares = min(max_risk / risk_share, cash / close) if risk_share > 0 and close > 0 else 0
 
     if not setup_is_valid:
@@ -597,6 +626,37 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
 
     position = shares * close
     dollar_risk = shares * risk_share
+
+    # Money flow score emphasizes current money movement, not just clean setup quality.
+    money_flow = (
+        (best_score * 0.35)
+        + (rs * 0.25)
+        + (min(rel_vol, 3.0) / 3.0 * 20)
+        + (max(min(gp, 5), -5) + 5)
+        + (10 if intra["Above VWAP"] else 0)
+    )
+
+    money_flow = int(max(0, min(100, round(money_flow))))
+
+    reason_parts = []
+    if intra["Above VWAP"]:
+        reason_parts.append("Above VWAP")
+    if intra["OR Zone"] in ["Breakout", "Near breakout", "Upper range"]:
+        reason_parts.append(intra["OR Zone"])
+    if rs >= 70:
+        reason_parts.append("Strong RS")
+    elif rs >= 60:
+        reason_parts.append("Acceptable RS")
+    if rel_vol >= 1.5:
+        reason_parts.append("High relative volume")
+    elif rel_vol >= 1.0:
+        reason_parts.append("Volume active")
+    if gp >= 2:
+        reason_parts.append("Positive gap")
+    if best_score >= 80:
+        reason_parts.append(f"{best_setup} engine strong")
+
+    reason = " + ".join(reason_parts) if reason_parts else "No dominant money-flow edge"
 
     return {
         "Ticker": ticker,
@@ -606,6 +666,8 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
         "Pattern": pattern,
         "Tier": tier,
         "Best Score": best_score,
+        "Money Flow Score": money_flow,
+        "Reason": reason,
         "ORB Score": engines["ORB"],
         "VWAP Score": engines["VWAP"],
         "Gap Score": engines["Gap"],
@@ -661,7 +723,7 @@ def run_scan(symbols, light, cash, risk_pct):
     df = pd.DataFrame(rows)
 
     return df.sort_values(
-        ["Best Score", "Probability %", "RS Score", "EV / Share"],
+        ["Money Flow Score", "Best Score", "RS Score", "EV / Share"],
         ascending=False,
     ).reset_index(drop=True)
 
@@ -688,59 +750,56 @@ def save_journal(df):
 
 
 # ============================================================
-# UI COMPONENTS
+# UI
 # ============================================================
 
-def show_top_opportunities(scan, light, score, reason):
-    st.header("TODAY'S BEST OPPORTUNITIES")
+def money_flow_dashboard(scan, light, score, reason):
+    st.header("MONEY FLOW DASHBOARD")
 
     tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
-    top3 = scan.head(3)
 
-    if tradeable.empty:
-        st.error("NO APPROVED TRADE YET")
-        st.write("Best candidates are watch-only. Wait for stronger setup alignment.")
+    top_flow = scan.iloc[0]
+    top_trade = tradeable.iloc[0] if not tradeable.empty else None
+
+    if top_trade is not None:
+        st.success(f"TODAY'S FOCUS: {top_trade['Ticker']} - {top_trade['Tier']} {top_trade['Best Setup']} - {top_trade['Signal']}")
     else:
-        best = tradeable.iloc[0]
-        st.success(f"FOCUS: {best['Ticker']} - {best['Tier']} {best['Best Setup']} - {best['Signal']}")
+        st.error(f"NO APPROVED TRADE YET. Strongest flow: {top_flow['Ticker']}")
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Market", f"{light} {score}/100")
-    c2.metric("Tradeable Names", len(tradeable))
-    c3.metric("Top Score", scan.iloc[0]["Best Score"])
-    c4.metric("Top Setup", scan.iloc[0]["Best Setup"])
+    a, b, c, d = st.columns(4)
+    a.metric("Market", f"{light} {score}/100")
+    b.metric("Tradeable Names", len(tradeable))
+    c.metric("Strongest Flow", top_flow["Ticker"])
+    d.metric("Top Flow Score", top_flow["Money Flow Score"])
 
     st.caption(reason)
 
-    display = top3[[
-        "Ticker", "Signal", "Tier", "Best Setup", "Best Score", "Probability %",
-        "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk",
-        "EV / Share", "Above VWAP", "OR Zone", "RS Score"
-    ]]
+    st.subheader("Top 3 Money Flow Names")
+    top3 = scan.head(3).copy()
 
-    st.dataframe(display, use_container_width=True)
+    st.dataframe(
+        top3[[
+            "Ticker", "Sector", "Signal", "Tier", "Best Setup", "Money Flow Score",
+            "Best Score", "Reason", "Price", "Stop", "Target 1",
+            "Shares", "Position $", "Dollar Risk"
+        ]],
+        use_container_width=True,
+    )
 
 
-def show_trade_plan(row, light):
+def trade_plan(row, light):
     st.header("Trade Plan")
 
-    if row is None:
-        st.info("No setup selected.")
-        return
-
     if row["Signal"] in ["TRADE", "SMALL TRADE"]:
-        if row["Signal"] == "TRADE":
-            st.success(f"{row['Ticker']} is tradeable as {row['Tier']} {row['Best Setup']}")
-        else:
-            st.warning(f"{row['Ticker']} is a SMALL TRADE only")
+        st.success(f"{row['Ticker']} is eligible: {row['Signal']}")
     else:
-        st.error(f"{row['Ticker']} is not approved yet")
+        st.error(f"{row['Ticker']} is not eligible yet")
 
     a, b, c, d, e = st.columns(5)
     a.metric("Ticker", row["Ticker"])
     b.metric("Setup", row["Best Setup"])
     c.metric("Tier", row["Tier"])
-    d.metric("Score", row["Best Score"])
+    d.metric("Money Flow", row["Money Flow Score"])
     e.metric("Probability", f"{row['Probability %']}%")
 
     f, g, h, i = st.columns(4)
@@ -755,7 +814,7 @@ def show_trade_plan(row, light):
     l.metric("Dollar Risk", f"${row['Dollar Risk']:,.2f}")
     m.metric("Risk Multiplier", f"{row['Risk Multiplier']:.2f}x")
 
-    st.write(f"Pattern: **{row['Pattern']}**")
+    st.write(f"Reason: **{row['Reason']}**")
     st.write(f"Context: VWAP **{row['Above VWAP']}**, OR Zone **{row['OR Zone']}**, Intraday **{row['Intraday Trend']}**, RS **{row['RS Score']}**")
 
     checklist(row, light)
@@ -766,91 +825,126 @@ def checklist(row, light):
 
     checks = [
         ("Tier is A+, A, or B", row["Tier"] in ["A+", "A", "B"]),
-        ("Market not RED for B setup", not (light == "RED" and row["Tier"] == "B")),
-        ("EV is non-negative", row["EV / Share"] >= -0.05),
-        ("Reward/Risk >= 1.25", row["Reward/Risk"] >= 1.25),
+        ("Money Flow Score >= 65", row["Money Flow Score"] >= 65),
+        ("Market allows setup", not (light == "RED" and row["Tier"] == "B" and row["RS Score"] < 60)),
+        ("EV not deeply negative", row["EV / Share"] >= -0.10),
+        ("Reward/Risk >= 1.20", row["Reward/Risk"] >= 1.20),
         ("Not below OR low", row["OR Status"] != "Below OR Low"),
-        ("Setup score >= 70", row["Best Score"] >= 70),
         ("Relative strength acceptable", row["RS Score"] >= 50),
         ("Risk position generated", row["Position $"] > 0),
     ]
 
     passed = sum(1 for _, ok in checks if ok)
-
     st.write(f"Checklist Score: **{passed}/{len(checks)}**")
 
     for label, ok in checks:
         st.write(("YES - " if ok else "NO - ") + label)
 
 
-def show_engine_scores(scan):
-    st.header("Setup Engine Scores")
+def show_ranked_board(scan):
+    st.header("Ranked Money Flow Board")
+
+    top = scan.head(25).copy()
+    top.insert(0, "Rank", range(1, len(top) + 1))
 
     st.dataframe(
-        scan[[
-            "Ticker", "Sector", "Signal", "Tier", "Best Setup", "Best Score",
-            "ORB Score", "VWAP Score", "Gap Score", "Momentum Score", "Daily Score",
-            "Price", "Probability %", "RS Score", "EV / Share"
+        top[[
+            "Rank", "Ticker", "Sector", "Signal", "Tier", "Best Setup",
+            "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
+            "EV / Share", "Position $", "Dollar Risk", "Above VWAP", "OR Zone", "RS Score"
         ]],
         use_container_width=True,
-        height=520,
+        height=600,
     )
 
 
-def show_sector_strength(scan):
-    st.header("Sector Strength")
+def sector_flow(scan):
+    st.header("Sector Money Flow")
 
     sec = scan.groupby("Sector").agg(
         Names=("Ticker", "count"),
         Tradeable=("Signal", lambda x: x.isin(["TRADE", "SMALL TRADE"]).sum()),
-        Avg_Best_Score=("Best Score", "mean"),
+        Avg_Flow=("Money Flow Score", "mean"),
+        Avg_Setup=("Best Score", "mean"),
         Avg_RS=("RS Score", "mean"),
         Avg_EV=("EV / Share", "mean"),
     ).reset_index()
 
-    sec["Avg_Best_Score"] = sec["Avg_Best_Score"].round(1)
+    sec["Avg_Flow"] = sec["Avg_Flow"].round(1)
+    sec["Avg_Setup"] = sec["Avg_Setup"].round(1)
     sec["Avg_RS"] = sec["Avg_RS"].round(1)
     sec["Avg_EV"] = sec["Avg_EV"].round(2)
 
-    st.dataframe(sec.sort_values(["Tradeable", "Avg_Best_Score"], ascending=False), use_container_width=True)
+    sec = sec.sort_values(["Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
+
+    st.dataframe(sec, use_container_width=True)
+
+    if not sec.empty:
+        leader_sector = sec.iloc[0]["Sector"]
+        leaders = scan[scan["Sector"] == leader_sector].head(5)
+
+        st.subheader(f"Leaders in strongest sector: {leader_sector}")
+        st.dataframe(
+            leaders[[
+                "Ticker", "Signal", "Tier", "Best Setup", "Money Flow Score",
+                "Best Score", "Reason", "Price", "Position $"
+            ]],
+            use_container_width=True,
+        )
 
 
-def show_no_trade(scan):
-    st.header("No Trade / Watch List")
+def engine_scores(scan):
+    st.header("Setup Engine Scores")
+
+    st.dataframe(
+        scan[[
+            "Ticker", "Sector", "Signal", "Tier", "Best Setup", "Money Flow Score", "Best Score",
+            "ORB Score", "VWAP Score", "Gap Score", "Momentum Score", "Daily Score",
+            "Price", "RS Score", "EV / Share"
+        ]],
+        use_container_width=True,
+        height=560,
+    )
+
+
+def watch_no_trade(scan):
+    st.header("No Trade / Watch Board")
 
     nt = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
 
     if nt.empty:
-        st.success("Everything in the top scan is at least small-trade eligible.")
+        st.success("All names in scan are at least small-trade eligible.")
         return
 
     st.dataframe(
         nt[[
-            "Ticker", "Signal", "Tier", "Best Setup", "Best Score", "Price",
-            "EV / Share", "Reward/Risk", "Above VWAP", "OR Status", "OR Zone", "RS Score"
+            "Ticker", "Signal", "Tier", "Best Setup", "Money Flow Score",
+            "Best Score", "Reason", "Price", "EV / Share",
+            "Reward/Risk", "Above VWAP", "OR Status", "OR Zone", "RS Score"
         ]],
         use_container_width=True,
-        height=420,
+        height=500,
     )
 
 
-def show_participation(scan):
+def participation(scan):
     st.header("Participation Target")
 
     tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
-    participation = len(tradeable) / len(scan) * 100 if len(scan) else 0
+    participation_rate = len(tradeable) / len(scan) * 100 if len(scan) else 0
 
-    a, b, c = st.columns(3)
-    a.metric("Tradeable %", f"{participation:.1f}%")
+    a, b, c, d = st.columns(4)
+    a.metric("Tradeable %", f"{participation_rate:.1f}%")
     b.metric("Tradeable Names", len(tradeable))
     c.metric("Scanned Names", len(scan))
+    d.metric("Goal", "70-85%")
 
-    if participation >= 70:
-        st.success("Participation is high. Be careful not to overtrade.")
-    elif participation >= 40:
-        st.warning("Participation is moderate. Good balance if quality remains acceptable.")
+    if participation_rate >= 70:
+        st.success("Participation target reached. Do not overtrade; take best ranked setups only.")
+    elif participation_rate >= 40:
+        st.warning("Participation is moderate. Good if top setups are strong.")
     else:
-        st.error("Participation is low. Conditions are still selective.")
+        st.error("Participation is still low. Conditions remain selective.")
 
 
 def journal_tab():
@@ -941,7 +1035,6 @@ def csv_tab():
     df["Trans Code"] = df["Trans Code"].astype(str).str.strip()
 
     trades = df[df["Trans Code"].isin(["Buy", "Sell"])]
-
     rows = []
 
     for ticker, group in trades.groupby("Instrument"):
@@ -985,7 +1078,7 @@ def validator(light):
         fails = []
 
         if light == "RED":
-            fails.append("Market is RED. Only A/A+ setups preferred.")
+            fails.append("Market is RED. Only strongest setups preferred.")
 
         if entry <= 0 or stop <= 0 or target <= 0 or shares <= 0:
             fails.append("Missing entry/stop/target/shares.")
@@ -995,7 +1088,7 @@ def validator(light):
             fails.append("Target must be above entry.")
         else:
             rr = (target - entry) / (entry - stop)
-            if rr < 1.25:
+            if rr < 1.20:
                 fails.append(f"Reward/risk too low: {rr:.2f}")
 
         if not above_vwap:
@@ -1060,7 +1153,7 @@ def charts(scan):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v19.2")
+st.title("Deon's Trader Dashboard v20")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -1097,21 +1190,21 @@ st.progress(mscore)
 
 symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
-with st.spinner("Scanning opportunity engines..."):
+with st.spinner("Scanning money flow..."):
     scan = run_scan(symbols, light, cash, risk_pct)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
     st.stop()
 
-show_top_opportunities(scan, light, mscore, reason)
+money_flow_dashboard(scan, light, mscore, reason)
 
 tabs = st.tabs([
-    "Opportunities",
+    "Money Flow Board",
     "Trade Plan",
+    "Sector Flow",
     "Engine Scores",
     "No Trade / Watch",
-    "Sector Strength",
     "Participation",
     "Validator",
     "Journal",
@@ -1120,19 +1213,7 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
-    st.header("Ranked Opportunity Board")
-    top = scan.head(20).copy()
-    top.insert(0, "Rank", range(1, len(top) + 1))
-
-    st.dataframe(
-        top[[
-            "Rank", "Ticker", "Sector", "Signal", "Tier", "Best Setup", "Best Score",
-            "Price", "Probability %", "EV / Share", "Shares", "Position $",
-            "Dollar Risk", "Above VWAP", "OR Zone", "RS Score"
-        ]],
-        use_container_width=True,
-        height=560,
-    )
+    show_ranked_board(scan)
 
     st.subheader("Manual Watchlist")
     manual = [x.strip().upper() for x in watchlist_text.split(",") if x.strip()]
@@ -1141,19 +1222,19 @@ with tabs[0]:
 with tabs[1]:
     selected = st.selectbox("Select opportunity", scan["Ticker"].tolist(), key="plan_select")
     row = scan[scan["Ticker"] == selected].iloc[0]
-    show_trade_plan(row, light)
+    trade_plan(row, light)
 
 with tabs[2]:
-    show_engine_scores(scan)
+    sector_flow(scan)
 
 with tabs[3]:
-    show_no_trade(scan)
+    engine_scores(scan)
 
 with tabs[4]:
-    show_sector_strength(scan)
+    watch_no_trade(scan)
 
 with tabs[5]:
-    show_participation(scan)
+    participation(scan)
 
 with tabs[6]:
     validator(light)
@@ -1167,4 +1248,4 @@ with tabs[8]:
 with tabs[9]:
     charts(scan)
 
-st.caption("v19.2 expands opportunity by scoring ORB, VWAP, Gap, Momentum, and Daily Breakout setups separately. Risk is scaled by tier.")
+st.caption("v20 ranks where money is flowing now: sector flow, stock flow, setup score, VWAP/OR confirmation, and tiered risk sizing.")
