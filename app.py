@@ -6,10 +6,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
+import requests
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v29
-# EARNINGS + PREMARKET + LEARNING ENGINE BUILD
+# DEON'S TRADER DASHBOARD v31
+# BROKER EXECUTION INFRASTRUCTURE BUILD
 #
 # Goal:
 # - Make the "10/10" workflow happen inside the app.
@@ -20,7 +21,7 @@ import yfinance as yf
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v29", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v31.1", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1062,7 +1063,7 @@ def add_multi_source_scores(scan):
     scan["Sector Component"] = scan["Sector Rotation Score"].fillna(50)
     scan["External Component"] = scan["External Score"].fillna(50)
 
-    # Composite score. This is v29's main ranking score.
+    # Composite score. This is v31's main ranking score.
     scan["Composite Score"] = (
         (scan["Technical Score"] * 0.25)
         + (scan["Money Flow Component"] * 0.25)
@@ -1148,7 +1149,7 @@ def catalyst_summary(scan):
 # EARNINGS / PREMARKET / LEARNING ENGINE
 # ============================================================
 
-LEARNING_FILE = "trade_learning_log_v29.csv"
+LEARNING_FILE = "trade_learning_log_v31.csv"
 
 def parse_earnings_text(text):
     """
@@ -1412,7 +1413,7 @@ def apply_learning_scores(scan, log_df):
     return scan
 
 
-def add_v29_scores(scan):
+def add_v31_scores(scan):
     scan = scan.copy()
 
     scan["Professional Score"] = (
@@ -1453,14 +1454,14 @@ def add_v29_scores(scan):
     return scan
 
 
-def v29_summary(scan):
+def v31_summary(scan):
     if scan.empty or "Professional Score" not in scan.columns:
-        return "No v29 professional score available."
+        return "No v31 professional score available."
 
     leader = scan.iloc[0]
 
     lines = []
-    lines.append("V29 PROFESSIONAL LAYERS")
+    lines.append("V31 PROFESSIONAL LAYERS")
     lines.append(
         f"Top professional score: {leader['Ticker']} / {leader['Professional Score']} / "
         f"{leader['Professional Verdict']}"
@@ -1477,6 +1478,388 @@ def v29_summary(scan):
     )
 
     return "\n".join(lines)
+
+
+
+# ============================================================
+# TRADE EXECUTION ENGINE
+# ============================================================
+
+def build_ladder_plan(row, cash, risk_pct, entry_style="Pullback ladder", tranches=4):
+    """
+    Creates a manual execution plan. Does NOT place orders.
+    Supports Robinhood/manual execution now and IBKR/DAS-style automation later.
+    """
+    price = safe_num(row.get("Price", 0))
+    stop = safe_num(row.get("Stop", 0))
+    target1 = safe_num(row.get("Target 1", 0))
+    target2 = safe_num(row.get("Target 2", 0))
+    shares_total = safe_num(row.get("Shares", 0))
+    ticker = row.get("Ticker", "")
+
+    if price <= 0 or stop <= 0 or shares_total <= 0 or stop >= price:
+        return {
+            "valid": False,
+            "reason": "No valid execution plan because price, stop, or shares are invalid.",
+            "entry_table": pd.DataFrame(),
+            "exit_table": pd.DataFrame(),
+            "instructions": "No order plan generated.",
+            "summary": {},
+        }
+
+    tranches = int(max(1, min(6, tranches)))
+    risk_per_share = price - stop
+    total_risk = shares_total * risk_per_share
+
+    # Entry allocations: front-loaded for breakout, evenly distributed for pullback.
+    if entry_style == "Breakout confirmation":
+        entry_weights = np.array([0.50, 0.25, 0.15, 0.10, 0, 0])[:tranches]
+    elif entry_style == "Pullback ladder":
+        entry_weights = np.array([0.25, 0.25, 0.25, 0.25, 0, 0])[:tranches]
+    elif entry_style == "Starter then add":
+        entry_weights = np.array([0.35, 0.35, 0.20, 0.10, 0, 0])[:tranches]
+    else:
+        entry_weights = np.ones(tranches) / tranches
+
+    entry_weights = entry_weights / entry_weights.sum()
+
+    # Entry prices.
+    if entry_style == "Breakout confirmation":
+        entry_prices = np.linspace(price, price + risk_per_share * 0.30, tranches)
+    elif entry_style == "Starter then add":
+        entry_prices = np.array([
+            price,
+            price + risk_per_share * 0.20,
+            price + risk_per_share * 0.40,
+            max(price - risk_per_share * 0.20, stop + risk_per_share * 0.35),
+            price,
+            price,
+        ])[:tranches]
+    else:
+        # Pullback ladder from current/reference entry down toward but not into stop.
+        deepest = max(stop + risk_per_share * 0.30, price - risk_per_share * 0.75)
+        entry_prices = np.linspace(price, deepest, tranches)
+
+    entry_rows = []
+    for i in range(tranches):
+        shares = shares_total * entry_weights[i]
+        ep = round(float(entry_prices[i]), 2)
+        dollar = shares * ep
+        tranche_risk = max(0, ep - stop) * shares
+        entry_rows.append({
+            "Step": i + 1,
+            "Action": "BUY",
+            "Ticker": ticker,
+            "Entry Type": entry_style,
+            "Limit Price": ep,
+            "Shares": round(shares, 4),
+            "Approx $": round(dollar, 2),
+            "Risk to Stop": round(tranche_risk, 2),
+        })
+
+    entry_table = pd.DataFrame(entry_rows)
+
+    avg_entry = (entry_table["Limit Price"] * entry_table["Shares"]).sum() / entry_table["Shares"].sum()
+    avg_entry = round(float(avg_entry), 2)
+
+    # Recalculate targets from average entry for scale-out.
+    effective_risk = avg_entry - stop
+    t1 = round(avg_entry + effective_risk * 1.0, 2)
+    t2 = round(avg_entry + effective_risk * 1.5, 2)
+    t3 = round(avg_entry + effective_risk * 2.0, 2)
+    runner = round(avg_entry + effective_risk * 3.0, 2)
+
+    # Use dashboard targets if they are more conservative than derived targets.
+    if target1 > 0:
+        t1 = min(t1, target1) if target1 > avg_entry else t1
+    if target2 > 0:
+        t3 = min(t3, target2) if target2 > avg_entry else t3
+
+    exit_weights = np.array([0.30, 0.30, 0.25, 0.15])
+    exit_prices = [t1, t2, t3, runner]
+    exit_labels = ["Scale 1", "Scale 2", "Scale 3", "Runner"]
+
+    exit_rows = []
+    for i in range(4):
+        shares = shares_total * exit_weights[i]
+        xp = exit_prices[i]
+        reward = max(0, xp - avg_entry) * shares
+        exit_rows.append({
+            "Step": i + 1,
+            "Action": "SELL",
+            "Ticker": ticker,
+            "Exit Type": exit_labels[i],
+            "Limit Price": round(xp, 2),
+            "Shares": round(shares, 4),
+            "Approx Reward": round(reward, 2),
+        })
+
+    exit_table = pd.DataFrame(exit_rows)
+
+    break_even_trigger = t1
+    hard_stop = round(stop, 2)
+    emergency_exit = round(max(stop, avg_entry - effective_risk * 0.70), 2)
+
+    instructions = []
+    instructions.append(f"TRADE EXECUTION PLAN FOR {ticker}")
+    instructions.append(f"Reference entry: ${price:.2f}")
+    instructions.append(f"Planned average entry: ${avg_entry:.2f}")
+    instructions.append(f"Hard stop: ${hard_stop:.2f}")
+    instructions.append(f"Total planned shares: {shares_total:.4f}")
+    instructions.append(f"Estimated total risk: ${total_risk:.2f}")
+    instructions.append("")
+    instructions.append("ENTRY LADDER")
+    for _, r in entry_table.iterrows():
+        instructions.append(
+            f"{int(r['Step'])}. BUY {r['Shares']} shares limit ${r['Limit Price']} "
+            f"(risk to stop approx ${r['Risk to Stop']})"
+        )
+    instructions.append("")
+    instructions.append("EXIT LADDER")
+    for _, r in exit_table.iterrows():
+        instructions.append(
+            f"{int(r['Step'])}. SELL {r['Shares']} shares limit ${r['Limit Price']} "
+            f"({r['Exit Type']})"
+        )
+    instructions.append("")
+    instructions.append("STOP RULE")
+    instructions.append(f"- Hard stop for remaining shares: ${hard_stop:.2f}")
+    instructions.append(f"- After first scale at ${break_even_trigger:.2f}, consider moving stop to breakeven near ${avg_entry:.2f}")
+    instructions.append(f"- If price loses VWAP or breaks OR low before first target, emergency review/exit zone: ${emergency_exit:.2f}")
+    instructions.append("")
+    instructions.append("ROBINHOOD MANUAL SEQUENCE")
+    instructions.append("1. Do not enter all shares at once unless the setup is A+ and actively breaking out.")
+    instructions.append("2. Place first buy limit only.")
+    instructions.append("3. After fill, immediately set stop discipline manually.")
+    instructions.append("4. Add next tranche only if price confirms or pulls into planned level without breaking structure.")
+    instructions.append("5. Place scale-out sell limits after position is built.")
+    instructions.append("6. If stopped, do not re-enter without a fresh dashboard/ChatGPT review.")
+
+    summary = {
+        "Ticker": ticker,
+        "Reference Entry": round(price, 2),
+        "Planned Avg Entry": avg_entry,
+        "Hard Stop": hard_stop,
+        "Total Shares": round(shares_total, 4),
+        "Total Risk": round(total_risk, 2),
+        "First Target": round(t1, 2),
+        "Break Even Trigger": round(break_even_trigger, 2),
+        "Emergency Review": round(emergency_exit, 2),
+        "Entry Style": entry_style,
+        "Tranches": tranches,
+    }
+
+    return {
+        "valid": True,
+        "reason": "Execution plan generated.",
+        "entry_table": entry_table,
+        "exit_table": exit_table,
+        "instructions": "\n".join(instructions),
+        "summary": summary,
+    }
+
+
+def execution_packet(row, ladder_plan):
+    if not ladder_plan["valid"]:
+        return "No valid execution packet."
+
+    s = ladder_plan["summary"]
+    lines = []
+    lines.append("TRADE EXECUTION ENGINE v31.1")
+    lines.append(f"Ticker: {s['Ticker']}")
+    lines.append(f"Entry style: {s['Entry Style']}")
+    lines.append(f"Reference entry: {s['Reference Entry']}")
+    lines.append(f"Planned average entry: {s['Planned Avg Entry']}")
+    lines.append(f"Hard stop: {s['Hard Stop']}")
+    lines.append(f"Total shares: {s['Total Shares']}")
+    lines.append(f"Total estimated risk: ${s['Total Risk']}")
+    lines.append(f"First target: {s['First Target']}")
+    lines.append(f"Breakeven trigger: {s['Break Even Trigger']}")
+    lines.append(f"Emergency review zone: {s['Emergency Review']}")
+    lines.append("")
+    lines.append("Entry ladder:")
+    for _, r in ladder_plan["entry_table"].iterrows():
+        lines.append(f"- BUY {r['Shares']} @ {r['Limit Price']} | approx risk ${r['Risk to Stop']}")
+    lines.append("")
+    lines.append("Exit ladder:")
+    for _, r in ladder_plan["exit_table"].iterrows():
+        lines.append(f"- SELL {r['Shares']} @ {r['Limit Price']} | {r['Exit Type']} | approx reward ${r['Approx Reward']}")
+    lines.append("")
+    lines.append("Ask ChatGPT to verify whether this execution ladder matches the setup, market regime, VWAP/OR structure, and risk limits.")
+    return "\n".join(lines)
+
+
+
+# ============================================================
+# BROKER EXECUTION INFRASTRUCTURE
+# ============================================================
+
+def secret_value(name, default=None):
+    try:
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return default
+
+
+def alpaca_config():
+    key = secret_value("APCA_API_KEY_ID", "")
+    secret = secret_value("APCA_API_SECRET_KEY", "")
+    base_url = secret_value("APCA_BASE_URL", "https://paper-api.alpaca.markets")
+    live_enabled = str(secret_value("LIVE_TRADING_ENABLED", "false")).lower().strip() == "true"
+
+    temp_key = st.session_state.get("TEMP_APCA_API_KEY_ID", "")
+    temp_secret = st.session_state.get("TEMP_APCA_API_SECRET_KEY", "")
+    temp_base_url = st.session_state.get("TEMP_APCA_BASE_URL", "")
+    temp_live_enabled = st.session_state.get("TEMP_LIVE_TRADING_ENABLED", False)
+
+    if temp_key and temp_secret:
+        key = temp_key
+        secret = temp_secret
+        base_url = temp_base_url or "https://paper-api.alpaca.markets"
+        live_enabled = bool(temp_live_enabled)
+
+    return {
+        "key": key,
+        "secret": secret,
+        "base_url": base_url.rstrip("/"),
+        "live_enabled": live_enabled,
+        "configured": bool(key and secret),
+        "is_paper": "paper-api" in base_url,
+    }
+
+
+def alpaca_headers(cfg):
+    return {
+        "APCA-API-KEY-ID": cfg["key"],
+        "APCA-API-SECRET-KEY": cfg["secret"],
+        "Content-Type": "application/json",
+    }
+
+
+def alpaca_get_account(cfg):
+    if not cfg["configured"]:
+        return False, "Alpaca is not configured.", None
+
+    try:
+        url = cfg["base_url"] + "/v2/account"
+        resp = requests.get(url, headers=alpaca_headers(cfg), timeout=15)
+        if resp.status_code == 200:
+            return True, "Connected.", resp.json()
+        return False, f"Account check failed: {resp.status_code} {resp.text[:300]}", None
+    except Exception as e:
+        return False, f"Connection error: {e}", None
+
+
+def alpaca_submit_order(cfg, payload):
+    if not cfg["configured"]:
+        return False, "Alpaca is not configured.", None
+
+    try:
+        url = cfg["base_url"] + "/v2/orders"
+        resp = requests.post(url, headers=alpaca_headers(cfg), json=payload, timeout=20)
+        if resp.status_code in [200, 201]:
+            return True, "Order submitted.", resp.json()
+        return False, f"Order failed: {resp.status_code} {resp.text[:500]}", None
+    except Exception as e:
+        return False, f"Order error: {e}", None
+
+
+def alpaca_cancel_all_orders(cfg):
+    if not cfg["configured"]:
+        return False, "Alpaca is not configured.", None
+
+    try:
+        url = cfg["base_url"] + "/v2/orders"
+        resp = requests.delete(url, headers=alpaca_headers(cfg), timeout=20)
+        if resp.status_code in [200, 204, 207]:
+            return True, "Cancel request sent.", resp.text
+        return False, f"Cancel failed: {resp.status_code} {resp.text[:500]}", None
+    except Exception as e:
+        return False, f"Cancel error: {e}", None
+
+
+def make_alpaca_bracket_payload(symbol, qty, limit_price, take_profit_price, stop_price, tif="day"):
+    return {
+        "symbol": symbol,
+        "qty": str(round(float(qty), 4)),
+        "side": "buy",
+        "type": "limit",
+        "time_in_force": tif,
+        "limit_price": str(round(float(limit_price), 2)),
+        "order_class": "bracket",
+        "take_profit": {
+            "limit_price": str(round(float(take_profit_price), 2))
+        },
+        "stop_loss": {
+            "stop_price": str(round(float(stop_price), 2))
+        }
+    }
+
+
+def build_broker_order_batch(ladder_plan):
+    """
+    Converts the ladder into one bracket order per entry tranche.
+    Each tranche gets its own take-profit target and shared stop.
+    """
+    if not ladder_plan["valid"]:
+        return []
+
+    entry = ladder_plan["entry_table"].copy()
+    exits = ladder_plan["exit_table"].copy()
+    summary = ladder_plan["summary"]
+
+    orders = []
+    symbol = summary["Ticker"]
+    stop = summary["Hard Stop"]
+
+    for i, r in entry.iterrows():
+        exit_idx = min(i, len(exits) - 1)
+        target = float(exits.iloc[exit_idx]["Limit Price"])
+
+        qty = float(r["Shares"])
+        limit_price = float(r["Limit Price"])
+
+        if qty <= 0 or limit_price <= 0 or target <= limit_price or stop >= limit_price:
+            continue
+
+        orders.append(make_alpaca_bracket_payload(
+            symbol=symbol,
+            qty=qty,
+            limit_price=limit_price,
+            take_profit_price=target,
+            stop_price=stop,
+        ))
+
+    return orders
+
+
+def broker_safety_check(ladder_plan, cash, max_order_value, max_total_risk):
+    if not ladder_plan["valid"]:
+        return False, ["Invalid ladder plan."]
+
+    issues = []
+    summary = ladder_plan["summary"]
+    total_risk = float(summary["Total Risk"])
+    total_value = float(ladder_plan["entry_table"]["Approx $"].sum())
+
+    if total_value > cash:
+        issues.append(f"Planned order value ${total_value:.2f} exceeds cash ${cash:.2f}.")
+
+    if total_value > max_order_value:
+        issues.append(f"Planned order value ${total_value:.2f} exceeds max order value ${max_order_value:.2f}.")
+
+    if total_risk > max_total_risk:
+        issues.append(f"Planned risk ${total_risk:.2f} exceeds max allowed risk ${max_total_risk:.2f}.")
+
+    if total_risk <= 0:
+        issues.append("Total risk is zero or invalid.")
+
+    if len(ladder_plan["entry_table"]) == 0:
+        issues.append("No entry orders generated.")
+
+    return len(issues) == 0, issues
 
 
 # ============================================================
@@ -1544,7 +1927,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v29")
+    lines.append("TRADER BRIEFING v31.1")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -1553,7 +1936,7 @@ def make_trader_briefing(snapshot):
     lines.append("")
     lines.append(catalyst_summary(pd.DataFrame(snapshot["top_10"])))
     lines.append(multi_source_summary(pd.DataFrame(snapshot["top_10"])))
-    lines.append(v29_summary(pd.DataFrame(snapshot["top_10"])))
+    lines.append(v31_summary(pd.DataFrame(snapshot["top_10"])))
     lines.append("")
 
     if candidate:
@@ -1597,6 +1980,7 @@ def make_trader_briefing(snapshot):
         lines.append(f"Relative volume: {candidate['Rel Vol']}")
         lines.append(f"Reason: {candidate['Reason']}")
         lines.append(f"Chart screenshot needed: {candidate['Chart Needed']}")
+        lines.append("Execution: use v31 ladder plan before placing any manual orders.")
     elif top_trade:
         lines.append("PRIMARY CANDIDATE")
         lines.append(f"Ticker: {top_trade['Ticker']}")
@@ -1632,7 +2016,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v29 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v31.1 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -1708,7 +2092,7 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v29")
+st.title("Deon's Trader Dashboard v31.1")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -1767,6 +2151,38 @@ st.sidebar.write("A+ max risk:", f"${cash * risk_pct:,.2f}")
 st.sidebar.write("A max risk:", f"${cash * risk_pct * 0.75:,.2f}")
 st.sidebar.write("B max risk:", f"${cash * risk_pct * 0.50:,.2f}")
 
+st.sidebar.subheader("Execution Engine")
+entry_style_setting = st.sidebar.selectbox(
+    "Default entry style",
+    ["Pullback ladder", "Breakout confirmation", "Starter then add"],
+    index=0,
+)
+tranche_count_setting = st.sidebar.slider("Entry tranches", min_value=1, max_value=4, value=4, step=1)
+st.sidebar.caption("Execution engine creates a manual order plan. Broker tab can submit to Alpaca only if configured.")
+
+st.sidebar.subheader("Temporary Alpaca API Connection")
+st.sidebar.caption("Use this because Streamlit Secrets is not editable right now. These values are not stored permanently.")
+temp_alpaca_key = st.sidebar.text_input("Alpaca API Key", type="password")
+temp_alpaca_secret = st.sidebar.text_input("Alpaca Secret Key", type="password")
+temp_alpaca_base = st.sidebar.selectbox(
+    "Alpaca Endpoint",
+    ["https://paper-api.alpaca.markets", "https://api.alpaca.markets"],
+    index=0,
+)
+temp_live_enabled = st.sidebar.checkbox("Allow live endpoint", value=False)
+
+if st.sidebar.button("Use temporary Alpaca keys"):
+    st.session_state["TEMP_APCA_API_KEY_ID"] = temp_alpaca_key.strip()
+    st.session_state["TEMP_APCA_API_SECRET_KEY"] = temp_alpaca_secret.strip()
+    st.session_state["TEMP_APCA_BASE_URL"] = temp_alpaca_base.strip()
+    st.session_state["TEMP_LIVE_TRADING_ENABLED"] = temp_live_enabled
+    st.sidebar.success("Temporary Alpaca keys loaded for this session.")
+
+st.sidebar.subheader("Broker Safety Limits")
+broker_max_order_value = st.sidebar.number_input("Max total order value", min_value=0.0, value=500.0, step=25.0)
+broker_max_total_risk = st.sidebar.number_input("Max total trade risk", min_value=0.0, value=25.0, step=5.0)
+st.sidebar.caption("Paper endpoint is safest while account review is pending. Live endpoint still requires explicit arming.")
+
 if st.sidebar.button("Refresh now"):
     st.cache_data.clear()
     st.rerun()
@@ -1792,15 +2208,18 @@ with st.spinner("Scanning technicals, news, sector rotation, earnings timing, pr
     scan = apply_earnings_timing(scan, earnings_df)
     scan = apply_premarket_activity(scan, premarket_df)
     scan = apply_learning_scores(scan, learning_log)
-    scan = add_v29_scores(scan)
+    scan = add_v31_scores(scan)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
     st.stop()
 
 snapshot = build_snapshot(scan, market_df, light, regime, market_score, market_reason)
+top_execution_row = pd.Series(snapshot["top_candidate"]) if snapshot["top_candidate"] else scan.iloc[0]
+default_ladder_plan = build_ladder_plan(top_execution_row, cash, risk_pct, entry_style_setting, tranche_count_setting)
+execution_text = execution_packet(top_execution_row, default_ladder_plan)
 briefing = make_trader_briefing(snapshot)
-full_packet = make_full_packet(snapshot)
+full_packet = make_full_packet(snapshot) + "\n\n" + execution_text
 
 auto_news_hits = scan[scan.get("Catalyst Source", "") == "Auto news"] if "Catalyst Source" in scan.columns else pd.DataFrame()
 manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if "Catalyst Source" in scan.columns else pd.DataFrame()
@@ -1810,14 +2229,14 @@ manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if
 # ============================================================
 
 st.header("Step 1 — Copy This Trader Briefing")
-st.success("This is the main v29 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
+st.success("This is the main v31 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
 st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v29.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v29.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v29.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v31.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v31.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v31.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -1838,6 +2257,22 @@ if top_candidate and top_candidate["Chart Needed"]:
     st.warning(f"Chart likely needed for {top_candidate['Ticker']} if you want final entry confirmation.")
 else:
     st.info("No chart screenshot needed yet. Paste the Trader Briefing first.")
+
+st.header("Step 3 — Trade Execution Plan")
+if default_ladder_plan["valid"]:
+    st.success(f"Execution ladder built for {default_ladder_plan['summary']['Ticker']}. This is a manual plan, not an automatic order.")
+    e1, e2, e3, e4 = st.columns(4)
+    e1.metric("Planned Avg Entry", f"${default_ladder_plan['summary']['Planned Avg Entry']:.2f}")
+    e2.metric("Hard Stop", f"${default_ladder_plan['summary']['Hard Stop']:.2f}")
+    e3.metric("Total Shares", f"{default_ladder_plan['summary']['Total Shares']:.4f}")
+    e4.metric("Total Risk", f"${default_ladder_plan['summary']['Total Risk']:.2f}")
+    st.subheader("Entry Ladder")
+    st.dataframe(default_ladder_plan["entry_table"], use_container_width=True)
+    st.subheader("Exit Ladder")
+    st.dataframe(default_ladder_plan["exit_table"], use_container_width=True)
+    st.text_area("Execution Packet for ChatGPT", execution_text, height=320)
+else:
+    st.error(default_ladder_plan["reason"])
 
 # ============================================================
 # MARKET SUMMARY
@@ -1901,6 +2336,8 @@ tabs = st.tabs([
     "Multi-Source",
     "Earnings/Premarket",
     "Learning Log",
+    "Execution Engine",
+    "Broker Execution",
     "Charts",
 ])
 
@@ -1962,7 +2399,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v29.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v31.json", mime="application/json")
 
 with tabs[3]:
     st.header("Sector Flow")
@@ -2031,7 +2468,7 @@ with tabs[7]:
 
 with tabs[8]:
     st.header("Multi-Source Intelligence")
-    st.write("v29 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
+    st.write("v31 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
     st.dataframe(
         scan[[
             "Ticker", "Composite Verdict", "Composite Score",
@@ -2110,6 +2547,172 @@ with tabs[10]:
                 st.error("Ticker, entry, exit, and shares are required.")
 
 with tabs[11]:
+    st.header("Trade Execution Engine")
+    st.write("This creates a manual ladder plan. It does not connect to Robinhood or place live orders.")
+
+    selected_exec = st.selectbox("Select ticker for execution plan", scan["Ticker"].tolist(), index=0, key="exec_select")
+    exec_row = scan[scan["Ticker"] == selected_exec].iloc[0]
+
+    c1, c2 = st.columns(2)
+    exec_style = c1.selectbox(
+        "Entry style",
+        ["Pullback ladder", "Breakout confirmation", "Starter then add"],
+        index=["Pullback ladder", "Breakout confirmation", "Starter then add"].index(entry_style_setting),
+        key="exec_style_tab",
+    )
+    exec_tranches = c2.slider("Entry tranches", min_value=1, max_value=4, value=tranche_count_setting, step=1, key="exec_tranches_tab")
+
+    plan = build_ladder_plan(exec_row, cash, risk_pct, exec_style, exec_tranches)
+
+    if plan["valid"]:
+        s = plan["summary"]
+        a, b, c, d = st.columns(4)
+        a.metric("Ticker", s["Ticker"])
+        b.metric("Avg Entry", f"${s['Planned Avg Entry']:.2f}")
+        c.metric("Hard Stop", f"${s['Hard Stop']:.2f}")
+        d.metric("Total Risk", f"${s['Total Risk']:.2f}")
+
+        st.subheader("Entry Ladder")
+        st.dataframe(plan["entry_table"], use_container_width=True)
+
+        st.subheader("Exit Ladder")
+        st.dataframe(plan["exit_table"], use_container_width=True)
+
+        st.subheader("Manual Broker Instructions")
+        st.text_area("Instructions", plan["instructions"], height=430)
+
+        st.download_button(
+            "Download Execution Plan TXT",
+            data=execution_packet(exec_row, plan).encode("utf-8"),
+            file_name=f"execution_plan_{s['Ticker']}.txt",
+            mime="text/plain",
+        )
+    else:
+        st.error(plan["reason"])
+
+with tabs[12]:
+    st.header("Broker Execution — Alpaca")
+    st.warning("This tab can place orders only if Alpaca keys are configured. Use paper trading first. This is not a promise of income.")
+
+    cfg = alpaca_config()
+
+    if cfg["configured"]:
+        mode = "PAPER" if cfg["is_paper"] else "LIVE"
+        if cfg["is_paper"]:
+            st.success(f"Alpaca configured in {mode} mode.")
+        else:
+            st.error(f"Alpaca configured in {mode} mode.")
+    else:
+        st.error("Alpaca is not configured.")
+        st.write("Either add Streamlit secrets later, or use the Temporary Alpaca API Connection fields in the sidebar now:")
+        st.code(
+            'APCA_API_KEY_ID = "your_key"\n'
+            'APCA_API_SECRET_KEY = "your_secret"\n'
+            'APCA_BASE_URL = "https://paper-api.alpaca.markets"\n'
+            'LIVE_TRADING_ENABLED = "false"'
+        )
+
+    if st.button("Test Alpaca Connection"):
+        ok, msg, acct = alpaca_get_account(cfg)
+        if ok:
+            st.success(msg)
+            safe_acct = {
+                "status": acct.get("status"),
+                "cash": acct.get("cash"),
+                "buying_power": acct.get("buying_power"),
+                "portfolio_value": acct.get("portfolio_value"),
+                "trading_blocked": acct.get("trading_blocked"),
+                "account_blocked": acct.get("account_blocked"),
+                "pattern_day_trader": acct.get("pattern_day_trader"),
+            }
+            st.json(safe_acct)
+        else:
+            st.error(msg)
+
+    st.subheader("Build Broker Order Batch")
+    selected_broker = st.selectbox("Ticker to route", scan["Ticker"].tolist(), index=0, key="broker_select")
+    broker_row = scan[scan["Ticker"] == selected_broker].iloc[0]
+
+    b1, b2 = st.columns(2)
+    broker_style = b1.selectbox(
+        "Entry style",
+        ["Pullback ladder", "Breakout confirmation", "Starter then add"],
+        index=["Pullback ladder", "Breakout confirmation", "Starter then add"].index(entry_style_setting),
+        key="broker_style",
+    )
+    broker_tranches = b2.slider("Entry tranches", min_value=1, max_value=4, value=tranche_count_setting, step=1, key="broker_tranches")
+
+    broker_plan = build_ladder_plan(broker_row, cash, risk_pct, broker_style, broker_tranches)
+    broker_orders = build_broker_order_batch(broker_plan)
+
+    if broker_plan["valid"]:
+        st.write("Execution summary:")
+        st.json(broker_plan["summary"])
+
+        ok_safety, safety_issues = broker_safety_check(
+            broker_plan,
+            cash=cash,
+            max_order_value=broker_max_order_value,
+            max_total_risk=broker_max_total_risk,
+        )
+
+        if ok_safety:
+            st.success("Safety check passed.")
+        else:
+            st.error("Safety check failed.")
+            for issue in safety_issues:
+                st.write("- " + issue)
+
+        st.subheader("Orders to Submit")
+        st.json(broker_orders)
+    else:
+        st.error(broker_plan["reason"])
+        ok_safety = False
+
+    st.subheader("Arming Controls")
+    st.write("To submit orders, type exactly:")
+    st.code("ARM PAPER TRADE")
+    arm_text = st.text_input("Arming phrase", value="", key="arm_phrase")
+
+    live_blocked = (not cfg["is_paper"]) and (not cfg["live_enabled"])
+
+    if live_blocked:
+        st.error("LIVE endpoint detected, but LIVE_TRADING_ENABLED is false. Orders are blocked.")
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        if st.button("Submit Bracket Ladder Orders"):
+            if not cfg["configured"]:
+                st.error("Alpaca is not configured.")
+            elif live_blocked:
+                st.error("Live trading is blocked by LIVE_TRADING_ENABLED=false.")
+            elif arm_text != "ARM PAPER TRADE" and cfg["is_paper"]:
+                st.error("Arming phrase incorrect.")
+            elif not cfg["is_paper"] and arm_text != "ARM LIVE TRADE":
+                st.error("Live mode requires exact phrase: ARM LIVE TRADE")
+            elif not ok_safety:
+                st.error("Safety check did not pass.")
+            elif not broker_orders:
+                st.error("No valid broker orders generated.")
+            else:
+                results = []
+                for payload in broker_orders:
+                    ok, msg, data = alpaca_submit_order(cfg, payload)
+                    results.append({"ok": ok, "message": msg, "order": data if ok else None, "payload": payload})
+                st.write("Submission results:")
+                st.json(results)
+
+    with col_b:
+        if st.button("Cancel All Open Alpaca Orders"):
+            ok, msg, data = alpaca_cancel_all_orders(cfg)
+            if ok:
+                st.success(msg)
+                st.write(data)
+            else:
+                st.error(msg)
+
+with tabs[13]:
     st.header("Charts")
     default_chart = top_candidate["Ticker"] if top_candidate else scan.iloc[0]["Ticker"]
     tickers = scan["Ticker"].tolist()
@@ -2123,4 +2726,4 @@ with tabs[11]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v29 adds Earnings Timing, Premarket Activity, and Trade Outcome Learning on top of the multi-source engine.")
+st.caption("v31.1 bypasses Streamlit Secrets by allowing temporary Alpaca API entry in the sidebar.")
