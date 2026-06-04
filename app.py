@@ -8,8 +8,8 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v26
-# CATALYST & NEWS ENGINE BUILD
+# DEON'S TRADER DASHBOARD v27
+# AUTOMATED CATALYST INTELLIGENCE BUILD
 #
 # Goal:
 # - Make the "10/10" workflow happen inside the app.
@@ -20,7 +20,7 @@ import yfinance as yf
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v26", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v27", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -547,6 +547,261 @@ CATALYST_WEIGHTS = {
     "Rumor / unconfirmed": 6,
 }
 
+
+POSITIVE_NEWS_KEYWORDS = {
+    "earnings beat": 30,
+    "beats estimates": 28,
+    "beat estimates": 28,
+    "raises guidance": 35,
+    "raised guidance": 35,
+    "strong guidance": 30,
+    "upgrade": 22,
+    "upgraded": 22,
+    "price target raised": 18,
+    "raises price target": 18,
+    "contract": 20,
+    "partnership": 20,
+    "collaboration": 14,
+    "ai": 14,
+    "artificial intelligence": 14,
+    "data center": 16,
+    "semiconductor": 10,
+    "record revenue": 22,
+    "surges": 16,
+    "jumps": 14,
+    "buy rating": 14,
+    "outperform": 14,
+}
+
+NEGATIVE_NEWS_KEYWORDS = {
+    "earnings miss": -30,
+    "misses estimates": -28,
+    "missed estimates": -28,
+    "lowers guidance": -35,
+    "lowered guidance": -35,
+    "cuts guidance": -35,
+    "downgrade": -25,
+    "downgraded": -25,
+    "price target cut": -20,
+    "cuts price target": -20,
+    "sec investigation": -35,
+    "investigation": -22,
+    "lawsuit": -18,
+    "offering": -32,
+    "share offering": -35,
+    "dilution": -35,
+    "resigns": -18,
+    "weak demand": -22,
+    "falls": -12,
+    "plunges": -22,
+    "sell rating": -18,
+    "underperform": -18,
+}
+
+
+@st.cache_data(ttl=900)
+def fetch_ticker_news(ticker, max_items=6):
+    """
+    Free catalyst source using yfinance ticker.news.
+    Limitations:
+    - Not guaranteed complete
+    - Can be delayed
+    - Sometimes returns generic market news
+    - Still better than ignoring catalysts entirely
+    """
+    try:
+        tk = yf.Ticker(ticker)
+        items = tk.news or []
+        rows = []
+
+        for item in items[:max_items]:
+            title = item.get("title", "") or ""
+            publisher = item.get("publisher", "") or ""
+            link = item.get("link", "") or ""
+            provider_time = item.get("providerPublishTime", None)
+
+            published = ""
+            if provider_time:
+                try:
+                    published = datetime.fromtimestamp(provider_time).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    published = ""
+
+            rows.append({
+                "Ticker": ticker,
+                "News Title": title,
+                "Publisher": publisher,
+                "Published": published,
+                "Link": link,
+            })
+
+        return pd.DataFrame(rows)
+
+    except Exception:
+        return pd.DataFrame(columns=["Ticker", "News Title", "Publisher", "Published", "Link"])
+
+
+def score_news_titles(news_df):
+    if news_df is None or news_df.empty:
+        return {
+            "Auto Catalyst Type": "None / Unknown",
+            "Auto Catalyst Score": 50,
+            "Auto Catalyst Note": "No recent Yahoo Finance news pulled",
+            "News Headlines": "",
+        }
+
+    all_titles = " | ".join(news_df["News Title"].fillna("").astype(str).tolist())
+    text = all_titles.lower()
+
+    raw = 0
+    hits = []
+
+    for key, value in POSITIVE_NEWS_KEYWORDS.items():
+        if key in text:
+            raw += value
+            hits.append(key)
+
+    for key, value in NEGATIVE_NEWS_KEYWORDS.items():
+        if key in text:
+            raw += value
+            hits.append(key)
+
+    raw = max(-45, min(45, raw))
+    score = int(max(0, min(100, 50 + raw)))
+
+    if score >= 80:
+        ctype = "Strong positive news"
+    elif score >= 65:
+        ctype = "Positive news"
+    elif score <= 20:
+        ctype = "Strong negative news"
+    elif score <= 35:
+        ctype = "Negative news"
+    else:
+        ctype = "Neutral / unclear news"
+
+    note = ", ".join(hits[:8]) if hits else "News found, but no strong catalyst keywords detected"
+
+    return {
+        "Auto Catalyst Type": ctype,
+        "Auto Catalyst Score": score,
+        "Auto Catalyst Note": note,
+        "News Headlines": all_titles[:1000],
+    }
+
+
+def build_auto_catalysts(symbols, enabled=True, max_symbols=12):
+    """
+    Pulls Yahoo Finance news for only the first N scanned tickers to avoid slow dashboard loads.
+    User can prioritize tickers by ordering Scanner Universe in sidebar.
+    """
+    if not enabled:
+        return pd.DataFrame(columns=[
+            "Ticker", "Auto Catalyst Type", "Auto Catalyst Score",
+            "Auto Catalyst Note", "News Headlines"
+        ])
+
+    rows = []
+    seen = set()
+
+    for symbol in symbols[:max_symbols]:
+        symbol = symbol.strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+
+        news_df = fetch_ticker_news(symbol)
+        scored = score_news_titles(news_df)
+        scored["Ticker"] = symbol
+        rows.append(scored)
+
+    if not rows:
+        return pd.DataFrame(columns=[
+            "Ticker", "Auto Catalyst Type", "Auto Catalyst Score",
+            "Auto Catalyst Note", "News Headlines"
+        ])
+
+    return pd.DataFrame(rows)
+
+
+def combine_manual_and_auto_catalysts(manual_df, auto_df):
+    """
+    Manual catalyst overrides are stronger than automatic news guesses.
+    If manual exists for a ticker, use manual score as primary.
+    If not, use auto score.
+    """
+    manual_df = manual_df.copy() if manual_df is not None else pd.DataFrame()
+    auto_df = auto_df.copy() if auto_df is not None else pd.DataFrame()
+
+    if manual_df.empty and auto_df.empty:
+        return pd.DataFrame(columns=[
+            "Ticker", "Catalyst Type", "Freshness", "Catalyst Note",
+            "Auto Catalyst Type", "Auto Catalyst Score", "Auto Catalyst Note", "News Headlines",
+            "Catalyst Source"
+        ])
+
+    if manual_df.empty:
+        out = auto_df.copy()
+        out["Catalyst Type"] = out["Auto Catalyst Type"]
+        out["Freshness"] = "Auto"
+        out["Catalyst Note"] = out["Auto Catalyst Note"]
+        out["Catalyst Source"] = "Auto news"
+        return out
+
+    manual_df["Ticker"] = manual_df["Ticker"].astype(str).str.upper().str.strip()
+    manual_df["Catalyst Source"] = "Manual override"
+
+    if auto_df.empty:
+        manual_df["Auto Catalyst Type"] = "None / Unknown"
+        manual_df["Auto Catalyst Score"] = 50
+        manual_df["Auto Catalyst Note"] = ""
+        manual_df["News Headlines"] = ""
+        return manual_df
+
+    auto_df["Ticker"] = auto_df["Ticker"].astype(str).str.upper().str.strip()
+
+    merged = auto_df.merge(
+        manual_df,
+        on="Ticker",
+        how="outer",
+        suffixes=("_auto", "_manual")
+    )
+
+    rows = []
+    for _, r in merged.iterrows():
+        ticker = r["Ticker"]
+
+        manual_type = r.get("Catalyst Type", np.nan)
+        has_manual = pd.notna(manual_type) and str(manual_type).strip() != ""
+
+        if has_manual:
+            rows.append({
+                "Ticker": ticker,
+                "Catalyst Type": r.get("Catalyst Type", "None / Unknown"),
+                "Freshness": r.get("Freshness", "Today"),
+                "Catalyst Note": r.get("Catalyst Note", ""),
+                "Auto Catalyst Type": r.get("Auto Catalyst Type", "None / Unknown"),
+                "Auto Catalyst Score": r.get("Auto Catalyst Score", 50),
+                "Auto Catalyst Note": r.get("Auto Catalyst Note", ""),
+                "News Headlines": r.get("News Headlines", ""),
+                "Catalyst Source": "Manual override",
+            })
+        else:
+            rows.append({
+                "Ticker": ticker,
+                "Catalyst Type": r.get("Auto Catalyst Type", "None / Unknown"),
+                "Freshness": "Auto",
+                "Catalyst Note": r.get("Auto Catalyst Note", ""),
+                "Auto Catalyst Type": r.get("Auto Catalyst Type", "None / Unknown"),
+                "Auto Catalyst Score": r.get("Auto Catalyst Score", 50),
+                "Auto Catalyst Note": r.get("Auto Catalyst Note", ""),
+                "News Headlines": r.get("News Headlines", ""),
+                "Catalyst Source": "Auto news",
+            })
+
+    return pd.DataFrame(rows)
+
+
 def parse_catalyst_text(text):
     """
     Expected format:
@@ -592,6 +847,8 @@ def catalyst_freshness_multiplier(freshness):
         return 0.55
     if f in ["older", "last week", "stale"]:
         return 0.25
+    if f in ["auto", "automatic", "yahoo"]:
+        return 1.00
 
     return 0.60
 
@@ -631,9 +888,14 @@ def apply_catalysts(scan, catalyst_df):
         scan["Catalyst Type"] = scan["Catalyst Type"].fillna("None / Unknown")
         scan["Freshness"] = scan["Freshness"].fillna("None")
         scan["Catalyst Note"] = scan["Catalyst Note"].fillna("")
+        scan["Auto Catalyst Type"] = scan.get("Auto Catalyst Type", "None / Unknown")
+        scan["Auto Catalyst Score"] = scan.get("Auto Catalyst Score", 50)
+        scan["Auto Catalyst Note"] = scan.get("Auto Catalyst Note", "")
+        scan["News Headlines"] = scan.get("News Headlines", "")
+        scan["Catalyst Source"] = scan.get("Catalyst Source", "None")
 
         scan["Catalyst Score"] = scan.apply(
-            lambda r: catalyst_score(r["Catalyst Type"], r["Freshness"]),
+            lambda r: int(r["Auto Catalyst Score"]) if str(r.get("Catalyst Source", "")).lower() == "auto news" and pd.notna(r.get("Auto Catalyst Score", np.nan)) else catalyst_score(r["Catalyst Type"], r["Freshness"]),
             axis=1,
         )
         scan["Catalyst Freshness"] = scan["Freshness"]
@@ -756,7 +1018,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v26")
+    lines.append("TRADER BRIEFING v27")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -778,6 +1040,9 @@ def make_trader_briefing(snapshot):
         lines.append(f"Money Flow Score: {candidate['Money Flow Score']}")
         lines.append(f"Catalyst Score: {candidate['Catalyst Score']}")
         lines.append(f"Catalyst: {candidate['Catalyst Type']} / {candidate['Catalyst Freshness']} / {candidate['Catalyst Note']}")
+        lines.append(f"Catalyst source: {candidate.get('Catalyst Source', 'Unknown')}")
+        lines.append(f"Auto news type: {candidate.get('Auto Catalyst Type', 'None / Unknown')}")
+        lines.append(f"News headlines: {candidate.get('News Headlines', '')}")
         lines.append(f"Best Setup Score: {candidate['Best Score']}")
         lines.append(f"Probability: {candidate['Probability %']}%")
         lines.append(f"Entry reference: {candidate['Price']}")
@@ -830,7 +1095,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v26 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v27 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -906,7 +1171,7 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v26")
+st.title("Deon's Trader Dashboard v27")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -923,6 +1188,11 @@ catalyst_text = st.sidebar.text_area(
 
 with st.sidebar.expander("Allowed catalyst types"):
     st.write(", ".join(CATALYST_WEIGHTS.keys()))
+
+st.sidebar.subheader("Automated News Scan")
+auto_news_enabled = st.sidebar.checkbox("Use Yahoo Finance news scan", value=True)
+auto_news_limit = st.sidebar.slider("Auto-news tickers to scan", min_value=5, max_value=25, value=12, step=1)
+st.sidebar.caption("Tip: put your most important tickers first in Scanner Universe. Yahoo news scan is free but can be delayed/incomplete.")
 cash = st.sidebar.number_input("Cash available", min_value=0.0, value=855.0, step=25.0)
 risk_pct = st.sidebar.number_input("Base risk per trade %", min_value=0.25, max_value=10.0, value=3.0, step=0.25) / 100
 
@@ -939,9 +1209,11 @@ light, regime, market_score, market_reason = market_state(market_df)
 
 symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
 
-with st.spinner("Scanning money flow, catalysts, and building ChatGPT briefing..."):
+with st.spinner("Scanning money flow, automated news, catalysts, and building ChatGPT briefing..."):
     base_scan = run_scan(symbols, light, cash, risk_pct)
-    catalyst_df = parse_catalyst_text(catalyst_text)
+    manual_catalyst_df = parse_catalyst_text(catalyst_text)
+    auto_catalyst_df = build_auto_catalysts(symbols, enabled=auto_news_enabled, max_symbols=auto_news_limit)
+    catalyst_df = combine_manual_and_auto_catalysts(manual_catalyst_df, auto_catalyst_df)
     scan = apply_catalysts(base_scan, catalyst_df)
 
 if scan.empty:
@@ -952,18 +1224,22 @@ snapshot = build_snapshot(scan, market_df, light, regime, market_score, market_r
 briefing = make_trader_briefing(snapshot)
 full_packet = make_full_packet(snapshot)
 
+auto_news_hits = scan[scan.get("Catalyst Source", "") == "Auto news"] if "Catalyst Source" in scan.columns else pd.DataFrame()
+manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if "Catalyst Source" in scan.columns else pd.DataFrame()
+
 # ============================================================
 # 10/10 COMMAND CENTER
 # ============================================================
 
 st.header("Step 1 — Copy This Trader Briefing")
-st.success("This is the main v25 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
+st.success("This is the main v27 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
+st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v26.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v26.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v26.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v27.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v27.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v27.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -1105,7 +1381,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v26.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v27.json", mime="application/json")
 
 with tabs[3]:
     st.header("Sector Flow")
@@ -1158,13 +1434,13 @@ with tabs[6]:
         st.error("Low participation. Conditions are still selective.")
 
 with tabs[7]:
-    st.header("Catalyst & News Engine")
-    st.write("Manual catalyst entries affect Total Opportunity Score and Catalyst-Adjusted Verdict.")
+    st.header("Automated Catalyst Intelligence")
+    st.write("Automatic Yahoo Finance news plus manual catalyst entries affect Total Opportunity Score and Catalyst-Adjusted Verdict.")
     st.dataframe(
         scan[[
-            "Ticker", "Catalyst-Adjusted Verdict", "Catalyst Type", "Catalyst Freshness",
-            "Catalyst Score", "Catalyst Bias", "Catalyst Note",
-            "Total Opportunity Score", "Money Flow Score", "Best Setup", "Signal"
+            "Ticker", "Catalyst-Adjusted Verdict", "Catalyst Source", "Catalyst Type", "Catalyst Freshness",
+            "Catalyst Score", "Auto Catalyst Type", "Auto Catalyst Score", "Catalyst Bias", "Catalyst Note",
+            "News Headlines", "Total Opportunity Score", "Money Flow Score", "Best Setup", "Signal"
         ]],
         use_container_width=True,
         height=520,
@@ -1186,4 +1462,4 @@ with tabs[8]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v26 adds a Catalyst & News Engine: copy briefing first, include catalyst context, chart only when needed, decision format is TRADE / WAIT / AVOID.")
+st.caption("v27 adds Automated Catalyst Intelligence using Yahoo Finance ticker news plus manual overrides.")
