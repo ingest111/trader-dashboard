@@ -21,7 +21,7 @@ import requests
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v31.1", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v32", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1485,11 +1485,121 @@ def v31_summary(scan):
 # TRADE EXECUTION ENGINE
 # ============================================================
 
+
+def adaptive_execution_style(row):
+    setup = str(row.get("Best Setup", "")).upper()
+    or_zone = str(row.get("OR Zone", "")).lower()
+    above_vwap = bool(row.get("Above VWAP", False))
+    signal = str(row.get("Signal", ""))
+    tier = str(row.get("Tier", ""))
+    momentum_score = safe_num(row.get("Momentum Score", 0))
+    vwap_score = safe_num(row.get("VWAP Score", 0))
+    orb_score = safe_num(row.get("ORB Score", 0))
+    gap_score = safe_num(row.get("Gap Score", 0))
+
+    if "ORB" in setup or orb_score >= max(vwap_score, momentum_score, gap_score):
+        if "breakout" in or_zone or "upper" in or_zone:
+            return "Breakout confirmation"
+
+    if "VWAP" in setup or (above_vwap and vwap_score >= 70):
+        return "Starter then add"
+
+    if "GAP" in setup and gap_score >= 70:
+        return "Starter then add"
+
+    if "MOMENTUM" in setup and tier in ["A+", "A"]:
+        return "Pullback ladder"
+
+    if signal == "SMALL TRADE":
+        return "Pullback ladder"
+
+    return "Pullback ladder"
+
+
+def ensure_trade_plan_fields(row, cash, risk_pct):
+    """
+    v32 repair layer:
+    If the broker engine receives a ranked row with missing/zero shares, stop, or targets,
+    create a conservative executable plan from price, setup strength, and risk settings.
+    """
+    r = row.copy() if hasattr(row, "copy") else pd.Series(row)
+
+    price = safe_num(r.get("Price", 0))
+    stop = safe_num(r.get("Stop", 0))
+    target1 = safe_num(r.get("Target 1", 0))
+    target2 = safe_num(r.get("Target 2", 0))
+    shares = safe_num(r.get("Shares", 0))
+
+    if price <= 0:
+        return r
+
+    setup = str(r.get("Best Setup", "")).upper()
+    tier = str(r.get("Tier", ""))
+    signal = str(r.get("Signal", ""))
+    professional_score = safe_num(r.get("Professional Score", r.get("Composite Score", 50)))
+
+    # Stop distance adapts to setup type and score.
+    if stop <= 0 or stop >= price:
+        if "ORB" in setup:
+            stop_pct = 0.012 if professional_score >= 70 else 0.018
+        elif "VWAP" in setup:
+            stop_pct = 0.014 if professional_score >= 70 else 0.020
+        elif "GAP" in setup:
+            stop_pct = 0.018 if professional_score >= 70 else 0.025
+        elif "MOMENTUM" in setup:
+            stop_pct = 0.020 if professional_score >= 70 else 0.030
+        else:
+            stop_pct = 0.020
+
+        stop = round(price * (1 - stop_pct), 2)
+        r["Stop"] = stop
+
+    risk_per_share = max(0.01, price - stop)
+
+    if target1 <= price:
+        r["Target 1"] = round(price + risk_per_share * 1.25, 2)
+    if target2 <= price:
+        r["Target 2"] = round(price + risk_per_share * 2.0, 2)
+
+    # Risk multiplier by quality.
+    if tier == "A+":
+        mult = 1.0
+    elif tier == "A":
+        mult = 0.75
+    elif tier == "B":
+        mult = 0.50
+    else:
+        mult = 0.25
+
+    # If dashboard says only WAIT, size smaller.
+    verdict = str(r.get("Professional Verdict", r.get("Composite Verdict", "")))
+    if "WAIT" in verdict:
+        mult *= 0.50
+    if "AVOID" in verdict:
+        mult = 0.0
+
+    risk_budget = cash * risk_pct * mult
+    max_affordable = cash / price if price > 0 else 0
+    calc_shares = min(risk_budget / risk_per_share, max_affordable) if risk_per_share > 0 else 0
+
+    if shares <= 0 and calc_shares > 0:
+        r["Shares"] = round(calc_shares, 4)
+        r["Position $"] = round(calc_shares * price, 2)
+        r["Dollar Risk"] = round(calc_shares * risk_per_share, 2)
+        r["Risk Multiplier"] = mult
+
+    return r
+
 def build_ladder_plan(row, cash, risk_pct, entry_style="Pullback ladder", tranches=4):
     """
-    Creates a manual execution plan. Does NOT place orders.
-    Supports Robinhood/manual execution now and IBKR/DAS-style automation later.
+    Creates an execution plan and broker-ready ladder.
+    v32 repairs missing trade-plan fields and supports Adaptive execution.
     """
+    if entry_style == "Adaptive":
+        entry_style = adaptive_execution_style(row)
+
+    row = ensure_trade_plan_fields(row, cash, risk_pct)
+
     price = safe_num(row.get("Price", 0))
     stop = safe_num(row.get("Stop", 0))
     target1 = safe_num(row.get("Target 1", 0))
@@ -1665,7 +1775,7 @@ def execution_packet(row, ladder_plan):
 
     s = ladder_plan["summary"]
     lines = []
-    lines.append("TRADE EXECUTION ENGINE v31.1")
+    lines.append("TRADE EXECUTION ENGINE v32")
     lines.append(f"Ticker: {s['Ticker']}")
     lines.append(f"Entry style: {s['Entry Style']}")
     lines.append(f"Reference entry: {s['Reference Entry']}")
@@ -1927,7 +2037,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v31.1")
+    lines.append("TRADER BRIEFING v32")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -2016,7 +2126,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v31.1 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v32 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -2092,7 +2202,7 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v31.1")
+st.title("Deon's Trader Dashboard v32")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -2154,7 +2264,7 @@ st.sidebar.write("B max risk:", f"${cash * risk_pct * 0.50:,.2f}")
 st.sidebar.subheader("Execution Engine")
 entry_style_setting = st.sidebar.selectbox(
     "Default entry style",
-    ["Pullback ladder", "Breakout confirmation", "Starter then add"],
+    ["Adaptive", "Pullback ladder", "Breakout confirmation", "Starter then add"],
     index=0,
 )
 tranche_count_setting = st.sidebar.slider("Entry tranches", min_value=1, max_value=4, value=4, step=1)
@@ -2216,6 +2326,7 @@ if scan.empty:
 
 snapshot = build_snapshot(scan, market_df, light, regime, market_score, market_reason)
 top_execution_row = pd.Series(snapshot["top_candidate"]) if snapshot["top_candidate"] else scan.iloc[0]
+top_execution_row = ensure_trade_plan_fields(top_execution_row, cash, risk_pct)
 default_ladder_plan = build_ladder_plan(top_execution_row, cash, risk_pct, entry_style_setting, tranche_count_setting)
 execution_text = execution_packet(top_execution_row, default_ladder_plan)
 briefing = make_trader_briefing(snapshot)
@@ -2234,9 +2345,9 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v31.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v31.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v31.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v32.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v32.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v32.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -2399,7 +2510,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v31.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v32.json", mime="application/json")
 
 with tabs[3]:
     st.header("Sector Flow")
@@ -2554,10 +2665,11 @@ with tabs[11]:
     exec_row = scan[scan["Ticker"] == selected_exec].iloc[0]
 
     c1, c2 = st.columns(2)
+    exec_style_options = ["Adaptive", "Pullback ladder", "Breakout confirmation", "Starter then add"]
     exec_style = c1.selectbox(
         "Entry style",
-        ["Pullback ladder", "Breakout confirmation", "Starter then add"],
-        index=["Pullback ladder", "Breakout confirmation", "Starter then add"].index(entry_style_setting),
+        exec_style_options,
+        index=exec_style_options.index(entry_style_setting) if entry_style_setting in exec_style_options else 0,
         key="exec_style_tab",
     )
     exec_tranches = c2.slider("Entry tranches", min_value=1, max_value=4, value=tranche_count_setting, step=1, key="exec_tranches_tab")
@@ -2634,10 +2746,11 @@ with tabs[12]:
     broker_row = scan[scan["Ticker"] == selected_broker].iloc[0]
 
     b1, b2 = st.columns(2)
+    broker_style_options = ["Adaptive", "Pullback ladder", "Breakout confirmation", "Starter then add"]
     broker_style = b1.selectbox(
         "Entry style",
-        ["Pullback ladder", "Breakout confirmation", "Starter then add"],
-        index=["Pullback ladder", "Breakout confirmation", "Starter then add"].index(entry_style_setting),
+        broker_style_options,
+        index=broker_style_options.index(entry_style_setting) if entry_style_setting in broker_style_options else 0,
         key="broker_style",
     )
     broker_tranches = b2.slider("Entry tranches", min_value=1, max_value=4, value=tranche_count_setting, step=1, key="broker_tranches")
@@ -2646,6 +2759,10 @@ with tabs[12]:
     broker_orders = build_broker_order_batch(broker_plan)
 
     if broker_plan["valid"]:
+        if "WAIT" in str(broker_row.get("Professional Verdict", "")):
+            st.warning("This ticker is WAIT FOR TRIGGER. Orders are buildable, but do not submit unless the chart trigger confirms.")
+        if "AVOID" in str(broker_row.get("Professional Verdict", "")):
+            st.error("This ticker is AVOID / WATCH ONLY. Submission should remain blocked by sizing/risk rules.")
         st.write("Execution summary:")
         st.json(broker_plan["summary"])
 
@@ -2726,4 +2843,4 @@ with tabs[13]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v31.1 bypasses Streamlit Secrets by allowing temporary Alpaca API entry in the sidebar.")
+st.caption("v32 adds Adaptive Execution: converts ranked setups into valid entry, stop, target, shares, and Alpaca bracket-order ladders.")
