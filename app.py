@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="Deon's Trader Dashboard v23", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v24", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 DEFAULT_SCAN = [
@@ -327,12 +327,56 @@ def make_snapshot(scan, mkt, light, regime, score, reason):
         "no_trade_watch": records(no_trade.head(10))
     }
 
+
+def trader_briefing(snapshot):
+    m = snapshot["market"]
+    tt = snapshot["top_tradeable_name"]
+    top3 = snapshot["top_3"]
+
+    lines = []
+    lines.append("TRADER BRIEFING v24")
+    lines.append(f"Time: {snapshot['timestamp']}")
+    lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
+    lines.append(f"Tradeable names: {snapshot['tradeable_count']} of {snapshot['scanned_count']}")
+    lines.append("")
+
+    if tt:
+        lines.append("PRIMARY DECISION")
+        lines.append(f"Best candidate: {tt['Ticker']}")
+        lines.append(f"Action: {tt['Signal']}")
+        lines.append(f"Setup: {tt['Tier']} {tt['Best Setup']}")
+        lines.append(f"Entry reference: {tt['Price']}")
+        lines.append(f"Stop: {tt['Stop']}")
+        lines.append(f"Target 1: {tt['Target 1']}")
+        lines.append(f"Target 2: {tt['Target 2']}")
+        lines.append(f"Shares: {tt['Shares']}")
+        lines.append(f"Position size: ${tt['Position $']}")
+        lines.append(f"Max dollar risk: ${tt['Dollar Risk']}")
+        lines.append(f"Reason: {tt['Reason']}")
+    else:
+        lines.append("PRIMARY DECISION")
+        lines.append("No approved trade yet.")
+        lines.append(f"Strongest flow: {snapshot['top_flow_name']['Ticker']} / {snapshot['top_flow_name']['Best Setup']}")
+        lines.append(f"Reason: {snapshot['top_flow_name']['Reason']}")
+
+    lines.append("")
+    lines.append("TOP 3 TO WATCH")
+    for i, r in enumerate(top3, 1):
+        lines.append(f"{i}. {r['Ticker']} - {r['Signal']} - {r['Tier']} {r['Best Setup']} - Flow {r['Money Flow Score']} - {r['Reason']}")
+
+    lines.append("")
+    lines.append("INSTRUCTION FOR CHATGPT")
+    lines.append("Give me one of three answers only: TRADE, WAIT, or AVOID. If TRADE, verify entry, stop, target, shares, and risk. If WAIT, tell me exactly what trigger must happen.")
+
+    return "\n".join(lines)
+
+
 def decision_packet(snapshot):
     m = snapshot["market"]
     tt = snapshot["top_tradeable_name"]
     tf = snapshot["top_flow_name"]
     lines = [
-        "DEON TRADER DASHBOARD v23 - DECISION PACKET",
+        "DEON TRADER DASHBOARD v24 - DECISION PACKET",
         f"Timestamp: {snapshot['timestamp']}",
         "",
         "MARKET",
@@ -391,7 +435,7 @@ def charts(scan):
     st.plotly_chart(fig, use_container_width=True)
 
 # APP
-st.title("Deon's Trader Dashboard v23")
+st.title("Deon's Trader Dashboard v24")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -417,13 +461,21 @@ if scan.empty:
 snapshot = make_snapshot(scan, mkt, light, regime, mscore, reason)
 packet = decision_packet(snapshot)
 
-st.header("Copy This for ChatGPT")
-st.info("Click in the box, press Ctrl+A, then Ctrl+C. Paste it into ChatGPT. This replaces screenshots.")
-st.text_area("Decision Packet", packet, height=520)
-c1, c2, c3 = st.columns(3)
-c1.download_button("Download Decision Packet TXT", data=packet.encode("utf-8"), file_name="dashboard_decision_packet.txt", mime="text/plain")
-c2.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="dashboard_snapshot.json", mime="application/json")
-c3.download_button("Download Top 10 CSV", data=download_csv(pd.DataFrame(snapshot["top_10"])), file_name="dashboard_top10.csv", mime="text/csv")
+briefing = trader_briefing(snapshot)
+
+st.header("Trader Briefing for ChatGPT")
+st.success("Fast workflow: copy this short briefing first. Use the full packet below only if we need deeper analysis.")
+st.text_area("Short Trader Briefing", briefing, height=300)
+
+st.header("Full Decision Packet")
+st.info("For deeper review: click in the box, press Ctrl+A, then Ctrl+C. Paste it into ChatGPT. This replaces screenshots.")
+st.text_area("Full Decision Packet", packet, height=520)
+
+c1, c2, c3, c4 = st.columns(4)
+c1.download_button("Download Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing.txt", mime="text/plain")
+c2.download_button("Download Decision Packet TXT", data=packet.encode("utf-8"), file_name="dashboard_decision_packet.txt", mime="text/plain")
+c3.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="dashboard_snapshot.json", mime="application/json")
+c4.download_button("Download Top 10 CSV", data=download_csv(pd.DataFrame(snapshot["top_10"])), file_name="dashboard_top10.csv", mime="text/csv")
 
 st.header("Market")
 st.dataframe(mkt, use_container_width=True)
@@ -486,4 +538,4 @@ with tabs[5]:
 with tabs[6]:
     charts(scan)
 
-st.caption("v23 removes the GitHub/Streamlit Secrets problem and puts the full ChatGPT decision packet at the top.")
+st.caption("v24 adds a fast Trader Briefing plus the full ChatGPT decision packet.")
