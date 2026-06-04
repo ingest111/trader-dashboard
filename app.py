@@ -1,5 +1,6 @@
 
 import os
+import json
 from datetime import datetime, date
 import numpy as np
 import pandas as pd
@@ -8,18 +9,18 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v20
-# MONEY FLOW ENGINE
+# DEON'S TRADER DASHBOARD v21
+# SNAPSHOT ENGINE
 #
-# Mission:
-# - Find where money is flowing today
-# - Rank strongest sectors
-# - Rank strongest stocks inside strongest sectors
-# - Preserve v19.2 opportunity engines
-# - Produce fast "top 3 to focus on" list
+# Based on v20 Money Flow Engine.
+# New:
+# - Export dashboard_snapshot.csv
+# - Export dashboard_snapshot.json
+# - Export top10, top3, sectors, no-trade lists
+# - Copy/paste text summary for ChatGPT
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v20", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v21", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -42,7 +43,7 @@ SECTOR = {
     "TSLA": "High Beta", "ORCL": "Software", "CEG": "Energy",
 }
 
-JOURNAL_FILE = "trade_journal_v20.csv"
+JOURNAL_FILE = "trade_journal_v21.csv"
 
 
 # ============================================================
@@ -164,7 +165,6 @@ def market_state(mdf):
 
     score = 50
 
-    # v20 softer market scoring: a mildly red index day should not instantly kill trades.
     if spy_1d >= 0:
         score += 12
     elif spy_1d > -0.75:
@@ -597,7 +597,6 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
     if risk_share > 0:
         ev = ((probability / 100) * (target1 - close)) - ((1 - probability / 100) * risk_share)
 
-    # v20: allow B trades if money-flow score is strong, EV is not deeply negative, and structure is not broken.
     setup_is_valid = (
         tier in ["A+", "A", "B"]
         and ev >= -0.10
@@ -627,7 +626,6 @@ def analyze(ticker, spy, market_light, cash, risk_pct):
     position = shares * close
     dollar_risk = shares * risk_share
 
-    # Money flow score emphasizes current money movement, not just clean setup quality.
     money_flow = (
         (best_score * 0.35)
         + (rs * 0.25)
@@ -729,6 +727,128 @@ def run_scan(symbols, light, cash, risk_pct):
 
 
 # ============================================================
+# SNAPSHOT ENGINE
+# ============================================================
+
+def sector_flow_df(scan):
+    if scan.empty:
+        return pd.DataFrame()
+
+    sec = scan.groupby("Sector").agg(
+        Names=("Ticker", "count"),
+        Tradeable=("Signal", lambda x: x.isin(["TRADE", "SMALL TRADE"]).sum()),
+        Avg_Flow=("Money Flow Score", "mean"),
+        Avg_Setup=("Best Score", "mean"),
+        Avg_RS=("RS Score", "mean"),
+        Avg_EV=("EV / Share", "mean"),
+    ).reset_index()
+
+    sec["Avg_Flow"] = sec["Avg_Flow"].round(1)
+    sec["Avg_Setup"] = sec["Avg_Setup"].round(1)
+    sec["Avg_RS"] = sec["Avg_RS"].round(1)
+    sec["Avg_EV"] = sec["Avg_EV"].round(2)
+
+    return sec.sort_values(["Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
+
+
+def make_snapshot(scan, mkt, light, regime, mscore, reason):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
+    top = scan.iloc[0].to_dict()
+    top_trade = tradeable.iloc[0].to_dict() if not tradeable.empty else None
+    sectors = sector_flow_df(scan)
+
+    snapshot = {
+        "timestamp": timestamp,
+        "market": {
+            "light": light,
+            "regime": regime,
+            "score": int(mscore),
+            "reason": reason,
+            "context": mkt.to_dict(orient="records"),
+        },
+        "top_flow_name": top,
+        "top_tradeable_name": top_trade,
+        "tradeable_count": int(len(tradeable)),
+        "scanned_count": int(len(scan)),
+        "top_3": scan.head(3).to_dict(orient="records"),
+        "top_10": scan.head(10).to_dict(orient="records"),
+        "sector_flow": sectors.to_dict(orient="records"),
+        "no_trade_watch": scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].head(10).to_dict(orient="records"),
+    }
+
+    return snapshot
+
+
+def snapshot_summary_text(snapshot):
+    market = snapshot["market"]
+    top_trade = snapshot["top_tradeable_name"]
+    top_flow = snapshot["top_flow_name"]
+
+    lines = []
+    lines.append("DASHBOARD SNAPSHOT")
+    lines.append(f"Timestamp: {snapshot['timestamp']}")
+    lines.append(f"Market: {market['light']} {market['score']}/100 - {market['regime']}")
+    lines.append(f"Market reason: {market['reason']}")
+    lines.append("")
+    lines.append(f"Scanned names: {snapshot['scanned_count']}")
+    lines.append(f"Tradeable names: {snapshot['tradeable_count']}")
+    lines.append("")
+
+    if top_trade:
+        lines.append("TOP TRADEABLE NAME")
+        lines.append(f"Ticker: {top_trade['Ticker']}")
+        lines.append(f"Signal: {top_trade['Signal']}")
+        lines.append(f"Tier: {top_trade['Tier']}")
+        lines.append(f"Best Setup: {top_trade['Best Setup']}")
+        lines.append(f"Money Flow Score: {top_trade['Money Flow Score']}")
+        lines.append(f"Price: {top_trade['Price']}")
+        lines.append(f"Stop: {top_trade['Stop']}")
+        lines.append(f"Target 1: {top_trade['Target 1']}")
+        lines.append(f"Shares: {top_trade['Shares']}")
+        lines.append(f"Position $: {top_trade['Position $']}")
+        lines.append(f"Dollar Risk: {top_trade['Dollar Risk']}")
+        lines.append(f"Reason: {top_trade['Reason']}")
+    else:
+        lines.append("TOP TRADEABLE NAME")
+        lines.append("None approved yet.")
+        lines.append("")
+        lines.append("STRONGEST FLOW NAME")
+        lines.append(f"Ticker: {top_flow['Ticker']}")
+        lines.append(f"Signal: {top_flow['Signal']}")
+        lines.append(f"Tier: {top_flow['Tier']}")
+        lines.append(f"Best Setup: {top_flow['Best Setup']}")
+        lines.append(f"Money Flow Score: {top_flow['Money Flow Score']}")
+        lines.append(f"Reason: {top_flow['Reason']}")
+
+    lines.append("")
+    lines.append("TOP 3")
+    for i, row in enumerate(snapshot["top_3"], start=1):
+        lines.append(
+            f"{i}. {row['Ticker']} | {row['Signal']} | {row['Tier']} | {row['Best Setup']} | "
+            f"Flow {row['Money Flow Score']} | Price {row['Price']} | Reason: {row['Reason']}"
+        )
+
+    lines.append("")
+    lines.append("SECTOR FLOW")
+    for i, row in enumerate(snapshot["sector_flow"][:5], start=1):
+        lines.append(
+            f"{i}. {row['Sector']} | Tradeable {row['Tradeable']} | Avg Flow {row['Avg_Flow']} | Avg RS {row['Avg_RS']}"
+        )
+
+    return "\n".join(lines)
+
+
+def convert_df_csv(df):
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def convert_json(obj):
+    return json.dumps(obj, indent=2, default=str).encode("utf-8")
+
+
+# ============================================================
 # JOURNAL
 # ============================================================
 
@@ -785,6 +905,63 @@ def money_flow_dashboard(scan, light, score, reason):
         ]],
         use_container_width=True,
     )
+
+
+def snapshot_tab(scan, mkt, light, regime, mscore, reason):
+    st.header("Dashboard Snapshot Export")
+
+    snapshot = make_snapshot(scan, mkt, light, regime, mscore, reason)
+    summary_text = snapshot_summary_text(snapshot)
+    sectors = sector_flow_df(scan)
+    tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
+    no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])].copy()
+
+    st.subheader("Copy/Paste Snapshot for ChatGPT")
+    st.text_area("Snapshot text", summary_text, height=420)
+
+    st.download_button(
+        "Download snapshot JSON",
+        data=convert_json(snapshot),
+        file_name="dashboard_snapshot.json",
+        mime="application/json",
+    )
+
+    st.download_button(
+        "Download top 10 CSV",
+        data=convert_df_csv(scan.head(10)),
+        file_name="dashboard_top10.csv",
+        mime="text/csv",
+    )
+
+    st.download_button(
+        "Download full scan CSV",
+        data=convert_df_csv(scan),
+        file_name="dashboard_full_scan.csv",
+        mime="text/csv",
+    )
+
+    st.download_button(
+        "Download sector flow CSV",
+        data=convert_df_csv(sectors),
+        file_name="dashboard_sector_flow.csv",
+        mime="text/csv",
+    )
+
+    st.download_button(
+        "Download tradeable names CSV",
+        data=convert_df_csv(tradeable),
+        file_name="dashboard_tradeable.csv",
+        mime="text/csv",
+    )
+
+    st.download_button(
+        "Download no-trade watchlist CSV",
+        data=convert_df_csv(no_trade),
+        file_name="dashboard_no_trade_watch.csv",
+        mime="text/csv",
+    )
+
+    st.info("Fastest workflow: copy the Snapshot text box and paste it into ChatGPT. Best data workflow: download dashboard_snapshot.json or dashboard_top10.csv and upload it.")
 
 
 def trade_plan(row, light):
@@ -858,24 +1035,10 @@ def show_ranked_board(scan):
     )
 
 
-def sector_flow(scan):
+def sector_flow_ui(scan):
     st.header("Sector Money Flow")
 
-    sec = scan.groupby("Sector").agg(
-        Names=("Ticker", "count"),
-        Tradeable=("Signal", lambda x: x.isin(["TRADE", "SMALL TRADE"]).sum()),
-        Avg_Flow=("Money Flow Score", "mean"),
-        Avg_Setup=("Best Score", "mean"),
-        Avg_RS=("RS Score", "mean"),
-        Avg_EV=("EV / Share", "mean"),
-    ).reset_index()
-
-    sec["Avg_Flow"] = sec["Avg_Flow"].round(1)
-    sec["Avg_Setup"] = sec["Avg_Setup"].round(1)
-    sec["Avg_RS"] = sec["Avg_RS"].round(1)
-    sec["Avg_EV"] = sec["Avg_EV"].round(2)
-
-    sec = sec.sort_values(["Tradeable", "Avg_Flow", "Avg_RS"], ascending=False)
+    sec = sector_flow_df(scan)
 
     st.dataframe(sec, use_container_width=True)
 
@@ -1153,7 +1316,7 @@ def charts(scan):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v20")
+st.title("Deon's Trader Dashboard v21")
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -1200,6 +1363,7 @@ if scan.empty:
 money_flow_dashboard(scan, light, mscore, reason)
 
 tabs = st.tabs([
+    "Snapshot Export",
     "Money Flow Board",
     "Trade Plan",
     "Sector Flow",
@@ -1213,39 +1377,42 @@ tabs = st.tabs([
 ])
 
 with tabs[0]:
+    snapshot_tab(scan, mkt, light, regime, mscore, reason)
+
+with tabs[1]:
     show_ranked_board(scan)
 
     st.subheader("Manual Watchlist")
     manual = [x.strip().upper() for x in watchlist_text.split(",") if x.strip()]
     st.dataframe(scan[scan["Ticker"].isin(manual)], use_container_width=True, height=320)
 
-with tabs[1]:
+with tabs[2]:
     selected = st.selectbox("Select opportunity", scan["Ticker"].tolist(), key="plan_select")
     row = scan[scan["Ticker"] == selected].iloc[0]
     trade_plan(row, light)
 
-with tabs[2]:
-    sector_flow(scan)
-
 with tabs[3]:
-    engine_scores(scan)
+    sector_flow_ui(scan)
 
 with tabs[4]:
-    watch_no_trade(scan)
+    engine_scores(scan)
 
 with tabs[5]:
-    participation(scan)
+    watch_no_trade(scan)
 
 with tabs[6]:
-    validator(light)
+    participation(scan)
 
 with tabs[7]:
-    journal_tab()
+    validator(light)
 
 with tabs[8]:
-    csv_tab()
+    journal_tab()
 
 with tabs[9]:
+    csv_tab()
+
+with tabs[10]:
     charts(scan)
 
-st.caption("v20 ranks where money is flowing now: sector flow, stock flow, setup score, VWAP/OR confirmation, and tiered risk sizing.")
+st.caption("v21 adds Snapshot Export so ChatGPT can review structured dashboard state instead of screenshots.")
