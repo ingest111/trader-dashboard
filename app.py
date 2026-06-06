@@ -1,6 +1,7 @@
 
 import json
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -317,6 +318,230 @@ hr {
     background: linear-gradient(90deg, transparent, rgba(15,118,110,.30), transparent);
     margin: 1.2rem 0;
 }
+
+
+/* ============================================================
+   V35.3 UI POLISH — extend header/sidebar color language
+   across the full app
+   ============================================================ */
+[data-testid="stHeader"] {
+    background: rgba(248, 250, 252, .74) !important;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(15,118,110,.10);
+}
+
+.v35-kicker {
+    position: relative;
+    display: inline-flex;
+    padding: 7px 11px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+    color: rgba(255,255,255,.86);
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.10);
+    font-weight: 950;
+    font-size: .76rem;
+    letter-spacing: .08em;
+}
+
+.v35-hero-boost {
+    margin-top: 4px;
+    box-shadow: 0 32px 82px rgba(6,22,34,.34), inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+.v35-trade-desk-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 18px 0 22px;
+}
+
+.v35-status-card {
+    position: relative;
+    overflow: hidden;
+    min-height: 126px;
+    border-radius: 22px;
+    padding: 17px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(241,248,249,.96));
+    border: 1px solid rgba(15,118,110,.20);
+    box-shadow: 0 16px 40px rgba(6,22,34,.08);
+}
+
+.v35-status-card:before {
+    content:"";
+    position:absolute;
+    left:0;
+    top:0;
+    width:100%;
+    height:5px;
+    background: linear-gradient(90deg, #061622, #0f766e, #2563eb);
+}
+
+.v35-status-card:after {
+    content:"";
+    position:absolute;
+    width:120px;
+    height:120px;
+    right:-48px;
+    bottom:-54px;
+    border-radius:50%;
+    background: radial-gradient(circle, rgba(56,189,248,.18), transparent 66%);
+}
+
+.v35-card-label {
+    color: #64748b;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-size: .72rem;
+    margin-bottom: 8px;
+}
+
+.v35-card-value {
+    color: #061622;
+    font-weight: 950;
+    letter-spacing: -.05em;
+    font-size: 1.85rem;
+    line-height: 1.05;
+}
+
+.v35-card-sub {
+    margin-top: 8px;
+    color: #334155;
+    font-size: .85rem;
+    font-weight: 750;
+}
+
+.v35-mode-ATTACK { border-color: rgba(16,185,129,.42); background: linear-gradient(160deg, #ecfdf5 0%, #ffffff 60%, #dbeafe 100%); }
+.v35-mode-PROBE { border-color: rgba(245,158,11,.42); background: linear-gradient(160deg, #fffbeb 0%, #ffffff 62%, #e0f2fe 100%); }
+.v35-mode-TRAIN { border-color: rgba(37,99,235,.34); background: linear-gradient(160deg, #eff6ff 0%, #ffffff 62%, #ccfbf1 100%); }
+.v35-mode-PROTECT { border-color: rgba(239,68,68,.38); background: linear-gradient(160deg, #fef2f2 0%, #ffffff 62%, #e2e8f0 100%); }
+
+.v35-banner {
+    border-radius: 24px;
+    padding: 18px 20px;
+    margin: 16px 0 18px;
+    background: linear-gradient(135deg, rgba(6,22,34,.98), rgba(8,51,68,.96) 40%, rgba(15,118,110,.95) 72%, rgba(37,99,235,.94));
+    color: white;
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 22px 54px rgba(6,22,34,.18);
+}
+
+.v35-banner-title {
+    font-size: 1.05rem;
+    font-weight: 950;
+    letter-spacing: -.035em;
+    margin-bottom: 6px;
+}
+
+.v35-banner-text {
+    opacity: .86;
+    font-weight: 650;
+    line-height: 1.45;
+}
+
+/* Make regular Streamlit sections feel like panels */
+section.main div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stMarkdownContainer"] h2),
+section.main div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stMarkdownContainer"] h3) {
+    scroll-margin-top: 80px;
+}
+
+h2 {
+    position: relative;
+    padding: 13px 16px 13px 18px;
+    margin-top: 1.45rem !important;
+    border-radius: 18px;
+    color: #061622 !important;
+    background: linear-gradient(90deg, rgba(6,22,34,.08), rgba(15,118,110,.08), rgba(37,99,235,.06));
+    border: 1px solid rgba(15,118,110,.16);
+    box-shadow: 0 10px 24px rgba(6,22,34,.045);
+}
+
+h2:before {
+    content:"";
+    position:absolute;
+    left:0;
+    top:0;
+    bottom:0;
+    width:6px;
+    border-radius: 18px 0 0 18px;
+    background: linear-gradient(180deg, #061622, #0f766e, #2563eb);
+}
+
+h3 {
+    color: #083344 !important;
+    font-weight: 950 !important;
+}
+
+/* Sidebar polish */
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    background:
+        radial-gradient(circle at top right, rgba(56,189,248,.18), transparent 25%),
+        linear-gradient(180deg, #061622 0%, #083344 48%, #0f766e 100%);
+}
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: white !important;
+    background: rgba(255,255,255,.08) !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    box-shadow: none !important;
+}
+section[data-testid="stSidebar"] h2:before,
+section[data-testid="stSidebar"] h3:before { display:none; }
+section[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border: 1px solid rgba(255,255,255,.12) !important;
+    border-radius: 16px !important;
+    background: rgba(255,255,255,.06) !important;
+}
+
+/* Metrics with stronger trade-desk identity */
+div[data-testid="stMetric"] {
+    position: relative;
+    overflow: hidden;
+}
+div[data-testid="stMetric"]:after {
+    content:"";
+    position:absolute;
+    right:-46px;
+    bottom:-52px;
+    width:120px;
+    height:120px;
+    border-radius:50%;
+    background: radial-gradient(circle, rgba(37,99,235,.11), transparent 68%);
+}
+div[data-testid="stMetricDelta"] {
+    font-weight: 900 !important;
+}
+
+/* Text areas become packet consoles */
+textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+    background: linear-gradient(180deg, #ffffff, #f8fafc) !important;
+    border: 1px solid rgba(15,118,110,.25) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.8) !important;
+}
+
+/* Dataframe container refinement */
+div[data-testid="stDataFrame"] {
+    background: white;
+}
+div[data-testid="stDataFrame"] [role="grid"] {
+    border-radius: 18px;
+}
+
+/* Alert badges */
+div[data-testid="stAlert"] {
+    border-left: 6px solid rgba(15,118,110,.65) !important;
+}
+
+@media (max-width: 1100px) {
+    .v35-trade-desk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+    .v35-trade-desk-grid { grid-template-columns: 1fr; }
+    .v35-card-value { font-size: 1.45rem; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -393,6 +618,11 @@ OPPORTUNITY_SECTOR = {
     "SPY": "ETF", "QQQ": "ETF", "IWM": "ETF", "SMH": "ETF", "SOXX": "ETF", "XLK": "ETF", "XLF": "ETF", "XLE": "ETF", "ARKK": "ETF",
 }
 SECTOR.update(OPPORTUNITY_SECTOR)
+
+
+def ct_now():
+    """Central Time timestamp for all dashboard displays and logs."""
+    return datetime.now(ZoneInfo("America/Chicago"))
 
 
 # ============================================================
@@ -2699,7 +2929,7 @@ def v351_scan_history_row(scan, market_light, market_score, market_reason):
     grade_counts = scan["Candidate Grade"].value_counts().to_dict() if "Candidate Grade" in scan.columns else {}
     leader = scan.iloc[0]
     return {
-        "Timestamp CT": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Timestamp CT": ct_now().strftime("%Y-%m-%d %H:%M:%S"),
         "Market Light": market_light,
         "Market Score": market_score,
         "Market Reason": market_reason,
@@ -3209,7 +3439,7 @@ def build_snapshot(scan, market_df, light, regime, score, reason):
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
     return {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": ct_now().strftime("%Y-%m-%d %H:%M:%S"),
         "market": {
             "light": light,
             "regime": regime,
@@ -3403,31 +3633,24 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v35.1")
+st.title("Deon's Trader Dashboard v35.3 — Opportunity Discovery")
 
 st.markdown("""
-<div class="v35-hero">
-  <h1>Daily Trader Mode v35.3.2.1</h1>
-  <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
+<div class="v35-hero v35-hero-boost">
+  <div class="v35-kicker">LIVE TRADE DESK · CENTRAL TIME · V35.3</div>
+  <h1>Opportunity Discovery Command Center</h1>
+  <p>Broader discovery universe → v35.2 permission engine → Robinhood real-trade review → Alpaca paper mirror. The colors now carry through the full workflow so status, risk, and opportunity are visible at a glance.</p>
   <div class="v35-hero-row">
-    <span class="v35-chip">⚡ Daily Setup Engine</span>
-    <span class="v35-chip">🛡️ Risk Locked</span>
-    <span class="v35-chip">📈 Alpaca Ready</span>
-    <span class="v35-chip">🎯 Robinhood Mirror</span>
+    <span class="v35-chip">⚡ Discovery Engine</span>
+    <span class="v35-chip">🧭 Daily Profit Mode</span>
+    <span class="v35-chip">🛡️ Real-Money Gate</span>
+    <span class="v35-chip">📊 Rejection Audit</span>
+    <span class="v35-chip">🎯 Robinhood / Alpaca Mirror</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="v35-card-dark">
-  <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:center;">
-    <div style="font-size:1.05rem; font-weight:950;">Trade Desk View</div>
-    <div style="opacity:.85;">Use the dashboard to generate candidates, verify the chart, then mirror Robinhood real trade with Alpaca paper.</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"Last updated CT: {ct_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
 watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST), height=90)
@@ -3615,6 +3838,52 @@ full_packet = make_full_packet(snapshot) + "\n\n" + execution_text
 
 auto_news_hits = scan[scan.get("Catalyst Source", "") == "Auto news"] if "Catalyst Source" in scan.columns else pd.DataFrame()
 manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if "Catalyst Source" in scan.columns else pd.DataFrame()
+
+# ============================================================
+# TRADE DESK COCKPIT
+# ============================================================
+
+mode_css = f"v35-mode-{daily_mode_value}" if daily_mode_value in ["ATTACK", "PROBE", "TRAIN", "PROTECT"] else ""
+try:
+    top_disc_ticker = opportunity_df.iloc[0]["Ticker"] if opportunity_df is not None and not opportunity_df.empty else "None"
+    top_disc_score = int(opportunity_df.iloc[0]["Discovery Score"]) if opportunity_df is not None and not opportunity_df.empty else 0
+except Exception:
+    top_disc_ticker, top_disc_score = "None", 0
+try:
+    top_real = scan[scan.get("V35.2 Permission", "") .isin(["REAL OK", "REAL REDUCED"])].iloc[0]
+    top_real_ticker = top_real["Ticker"]
+    top_real_permission = top_real["V35.2 Permission"]
+except Exception:
+    top_real_ticker, top_real_permission = "None", "No real trade"
+
+st.markdown(f"""
+<div class="v35-trade-desk-grid">
+  <div class="v35-status-card {mode_css}">
+    <div class="v35-card-label">Daily Mode</div>
+    <div class="v35-card-value">{daily_mode_value}</div>
+    <div class="v35-card-sub">{daily_mode_reason}</div>
+  </div>
+  <div class="v35-status-card">
+    <div class="v35-card-label">Monthly Pace</div>
+    <div class="v35-card-value">{month_math['Monthly P/L %']}%</div>
+    <div class="v35-card-sub">Need ${month_math['Needed $ / Day']:,.2f}/day · {month_math['Required R Remaining']}R left</div>
+  </div>
+  <div class="v35-status-card">
+    <div class="v35-card-label">Best Discovery</div>
+    <div class="v35-card-value">{top_disc_ticker}</div>
+    <div class="v35-card-sub">Discovery score {top_disc_score} · Injected universe filter active</div>
+  </div>
+  <div class="v35-status-card">
+    <div class="v35-card-label">Real-Money Gate</div>
+    <div class="v35-card-value">{top_real_ticker}</div>
+    <div class="v35-card-sub">{top_real_permission} · v35.2 permission remains final</div>
+  </div>
+</div>
+<div class="v35-banner">
+  <div class="v35-banner-title">Color System Upgrade</div>
+  <div class="v35-banner-text">Dark navy marks control and risk. Teal marks qualified opportunity. Emerald marks permission or improvement. Blue marks discovery and data. Red/yellow system alerts still override everything when protection is required.</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ============================================================
 # 10/10 COMMAND CENTER
@@ -4203,7 +4472,7 @@ with tabs[15]:
         rh_notes = st.text_input("Notes / trigger observed")
         if st.form_submit_button("Save Mirror Fill"):
             saved = append_csv_row(ROBINHOOD_MIRROR_FILE, {
-                "Timestamp CT": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Timestamp CT": ct_now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Trade Date": rh_date.isoformat(),
                 "Ticker": rh_ticker,
                 "Side": rh_side,
