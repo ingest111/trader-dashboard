@@ -10,7 +10,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.2",
+    page_title="Deon's Trader Dashboard v35.3 Opportunity Discovery",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -354,6 +354,45 @@ SECTOR = {
     "COIN": "Crypto", "MSTR": "Crypto", "HIMS": "Momentum", "RDDT": "Momentum",
     "TSLA": "High Beta", "ORCL": "Software", "CEG": "Energy"
 }
+
+
+# ============================================================
+# V35.3 OPPORTUNITY DISCOVERY UNIVERSE
+# ============================================================
+
+OPPORTUNITY_DISCOVERY_UNIVERSE = [
+    # Mega-cap liquidity / index leaders
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "NFLX",
+    # Semis / AI hardware
+    "ARM", "MU", "MRVL", "TSM", "SMCI", "ASML", "LRCX", "KLAC", "AMAT", "ON", "MCHP", "QCOM",
+    # AI infrastructure / power / networking
+    "VRT", "ANET", "DELL", "HPE", "NTAP", "CEG", "VST", "ETN", "GEV", "PWR",
+    # Software / AI / cloud
+    "PLTR", "APP", "ORCL", "SNOW", "DDOG", "NET", "CRWD", "PANW", "ZS", "MDB", "NOW", "CRM", "ADBE",
+    # Fintech / crypto beta
+    "HOOD", "SOFI", "COIN", "MSTR", "AFRM", "PYPL", "SQ", "UPST",
+    # Momentum / consumer internet / high beta
+    "RDDT", "HIMS", "UBER", "DASH", "SHOP", "ROKU", "DKNG", "RBLX", "TTD", "SE", "BABA", "PDD",
+    # Biotech / healthcare momentum proxies
+    "LLY", "NVO", "MRNA", "VKTX", "TMDX", "ISRG",
+    # Industrials / defense / energy beta
+    "BA", "GE", "RTX", "LMT", "CAT", "XOM", "CVX", "OXY", "SLB",
+    # ETFs used as opportunity and regime proxies
+    "SPY", "QQQ", "IWM", "SMH", "SOXX", "XLK", "XLF", "XLE", "ARKK",
+]
+
+OPPORTUNITY_SECTOR = {
+    "AAPL": "Mega Cap", "NFLX": "Mega Cap",
+    "ASML": "Semis", "LRCX": "Semis", "KLAC": "Semis", "AMAT": "Semis", "ON": "Semis", "MCHP": "Semis", "QCOM": "Semis",
+    "HPE": "AI Infra", "NTAP": "AI Infra", "VST": "Energy", "ETN": "AI Infra", "GEV": "Energy", "PWR": "AI Infra",
+    "SNOW": "Software", "DDOG": "Software", "NET": "Software", "CRWD": "Cybersecurity", "PANW": "Cybersecurity", "ZS": "Cybersecurity", "MDB": "Software", "NOW": "Software", "CRM": "Software", "ADBE": "Software",
+    "AFRM": "Fintech", "PYPL": "Fintech", "SQ": "Fintech", "UPST": "Fintech",
+    "UBER": "Momentum", "DASH": "Momentum", "SHOP": "Momentum", "ROKU": "High Beta", "DKNG": "High Beta", "RBLX": "High Beta", "TTD": "Software", "SE": "High Beta", "BABA": "China", "PDD": "China",
+    "LLY": "Healthcare", "NVO": "Healthcare", "MRNA": "Biotech", "VKTX": "Biotech", "TMDX": "Healthcare", "ISRG": "Healthcare",
+    "BA": "Industrials", "GE": "Industrials", "RTX": "Defense", "LMT": "Defense", "CAT": "Industrials", "XOM": "Energy", "CVX": "Energy", "OXY": "Energy", "SLB": "Energy",
+    "SPY": "ETF", "QQQ": "ETF", "IWM": "ETF", "SMH": "ETF", "SOXX": "ETF", "XLK": "ETF", "XLF": "ETF", "XLE": "ETF", "ARKK": "ETF",
+}
+SECTOR.update(OPPORTUNITY_SECTOR)
 
 
 # ============================================================
@@ -1461,7 +1500,7 @@ def catalyst_summary(scan):
 # ============================================================
 
 LEARNING_FILE = "trade_learning_log_v35_2.csv"
-SCAN_HISTORY_FILE = "scan_history_v35_2.csv"
+SCAN_HISTORY_FILE = "scan_history_v35_3.csv"
 ROBINHOOD_MIRROR_FILE = "robinhood_mirror_v35_2.csv"
 
 def parse_earnings_text(text):
@@ -2694,6 +2733,245 @@ def append_csv_row(path, row):
 
 
 # ============================================================
+
+# ============================================================
+# V35.3 OPPORTUNITY DISCOVERY ENGINE
+# ============================================================
+
+def parse_symbol_text(text):
+    if not text:
+        return []
+    cleaned = str(text).replace("\n", ",").replace(";", ",")
+    out = []
+    seen = set()
+    for raw in cleaned.split(","):
+        symbol = raw.strip().upper()
+        if symbol and symbol not in seen:
+            seen.add(symbol)
+            out.append(symbol)
+    return out
+
+
+def clamp_score(value):
+    return int(max(0, min(100, round(float(value or 0)))))
+
+
+def opportunity_tier(score):
+    if score >= 78:
+        return "PRIME"
+    if score >= 66:
+        return "ACTIVE"
+    if score >= 54:
+        return "BENCH"
+    return "IGNORE"
+
+
+def liquidity_bucket(dollar_volume):
+    if dollar_volume >= 2_000_000_000:
+        return "Institutional"
+    if dollar_volume >= 500_000_000:
+        return "Liquid"
+    if dollar_volume >= 100_000_000:
+        return "Tradable"
+    return "Thin"
+
+
+def atr_percent(df):
+    if df.empty or len(df) < 15:
+        return 0.0
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = safe_num(tr.rolling(14).mean().iloc[-1])
+    price = safe_num(close.iloc[-1])
+    return round((atr / price) * 100, 2) if price > 0 else 0.0
+
+
+def discovery_profile(symbol, spy_df, qqq_df):
+    df = get_data(symbol, "3mo", "1d")
+    if df.empty or len(df) < 30:
+        return None
+
+    close = safe_num(df["Close"].iloc[-1])
+    if close <= 0:
+        return None
+
+    ma10 = safe_num(df["Close"].rolling(10).mean().iloc[-1], close)
+    ma20 = safe_num(df["Close"].rolling(20).mean().iloc[-1], close)
+    ma50 = safe_num(df["Close"].rolling(50).mean().iloc[-1], close)
+    high20 = safe_num(df["High"].rolling(20).max().iloc[-2], close)
+    low20 = safe_num(df["Low"].rolling(20).min().iloc[-2], close)
+    avg_vol20 = safe_num(df["Volume"].rolling(20).mean().iloc[-1])
+    vol_today = safe_num(df["Volume"].iloc[-1])
+    rel_vol = vol_today / avg_vol20 if avg_vol20 > 0 else 0.0
+    dollar_vol = vol_today * close
+    gap = gap_percent(df)
+    one_day = pct_change(df, 2)
+    five_day = pct_change(df, 6)
+    one_month = pct_change(df, 22)
+    rs_spy = relative_strength(df, spy_df)
+    rs_qqq = relative_strength(df, qqq_df)
+    rs_blend = int(round((rs_spy * 0.55) + (rs_qqq * 0.45)))
+    atr_pct = atr_percent(df)
+    dist20 = ((close / ma20) - 1) * 100 if ma20 > 0 else 0.0
+    near_high = abs((close / high20) - 1) * 100 <= 3 if high20 > 0 else False
+    breakout = close > high20 if high20 > 0 else False
+    above10 = close >= ma10
+    above20 = close >= ma20
+    above50 = close >= ma50
+    trend_stack = above10 and above20 and above50 and ma10 >= ma20
+
+    flow_score = 0
+    flow_score += 25 if rel_vol >= 2.5 else 20 if rel_vol >= 1.7 else 14 if rel_vol >= 1.2 else 6 if rel_vol >= 0.9 else 0
+    flow_score += 20 if rs_blend >= 78 else 16 if rs_blend >= 68 else 10 if rs_blend >= 58 else 0
+    flow_score += 10 if dollar_vol >= 1_000_000_000 else 7 if dollar_vol >= 250_000_000 else 4 if dollar_vol >= 75_000_000 else 0
+
+    structure_score = 0
+    structure_score += 20 if breakout else 15 if near_high else 8 if above20 else 0
+    structure_score += 14 if trend_stack else 9 if above20 and above50 else 4 if above20 else 0
+    structure_score += 8 if -3 <= dist20 <= 10 else 4 if -6 <= dist20 <= 14 else -6 if dist20 > 18 else 0
+    structure_score += 6 if close > low20 else 0
+
+    movement_score = 0
+    movement_score += 14 if five_day >= 5 else 10 if five_day >= 2 else 5 if five_day > 0 else -4 if five_day < -5 else 0
+    movement_score += 12 if one_month >= 12 else 8 if one_month >= 6 else 3 if one_month > 0 else 0
+    movement_score += 8 if gap >= 2 else 5 if gap >= 1 else -8 if gap <= -3 else 0
+    movement_score += 8 if 2.0 <= atr_pct <= 7.5 else 4 if 1.2 <= atr_pct < 2.0 or 7.5 < atr_pct <= 10 else -4 if atr_pct > 12 else 0
+
+    sector_bonus = 0
+    sector = SECTOR.get(symbol, "Other")
+    if sector in ["Semis", "AI Infra", "AI Software", "Software", "Momentum", "Fintech", "Crypto"]:
+        sector_bonus += 4
+    if symbol in ["SPY", "QQQ", "SMH", "SOXX", "XLK", "IWM", "ARKK"]:
+        sector_bonus += 3
+
+    raw_score = flow_score + structure_score + movement_score + sector_bonus
+    score = clamp_score(raw_score)
+
+    tags = []
+    if rel_vol >= 1.5:
+        tags.append("RVOL expansion")
+    if rs_blend >= 68:
+        tags.append("relative strength")
+    if breakout:
+        tags.append("20D breakout")
+    elif near_high:
+        tags.append("near 20D high")
+    if trend_stack:
+        tags.append("trend stack")
+    if gap >= 1:
+        tags.append("positive gap")
+    if 2 <= atr_pct <= 8:
+        tags.append("tradable volatility")
+    if not tags:
+        tags.append("not enough discovery evidence")
+
+    primary_setup = "Relative Strength Breakout" if breakout or near_high else "VWAP/ORB Watch" if rel_vol >= 1.2 and rs_blend >= 58 else "Bench Watch"
+    discovery_action = "Send to v35.2 permission engine" if score >= 66 else "Keep on bench unless intraday trigger appears" if score >= 54 else "Do not expand into active scan"
+
+    return {
+        "Ticker": symbol,
+        "Sector": sector,
+        "Discovery Tier": opportunity_tier(score),
+        "Discovery Score": score,
+        "Discovery Action": discovery_action,
+        "Discovery Setup": primary_setup,
+        "Discovery Reason": " + ".join(tags[:5]),
+        "Price": round(close, 2),
+        "1D %": one_day,
+        "5D %": five_day,
+        "1M %": one_month,
+        "Gap %": gap,
+        "Rel Vol": round(rel_vol, 2),
+        "Dollar Volume": round(dollar_vol, 0),
+        "Liquidity": liquidity_bucket(dollar_vol),
+        "RS vs SPY": rs_spy,
+        "RS vs QQQ": rs_qqq,
+        "RS Blend": rs_blend,
+        "ATR %": atr_pct,
+        "Above 20MA": above20,
+        "Above 50MA": above50,
+        "Trend Stack": trend_stack,
+        "Near 20D High": bool(near_high),
+        "20D Breakout": bool(breakout),
+        "Distance 20MA %": round(dist20, 2),
+    }
+
+
+@st.cache_data(ttl=180)
+def build_opportunity_discovery(universe_symbols, manual_symbols, max_universe=60):
+    symbols = []
+    seen = set()
+    for sym in list(manual_symbols or []) + list(universe_symbols or []):
+        sym = str(sym).strip().upper()
+        if sym and sym not in seen:
+            seen.add(sym)
+            symbols.append(sym)
+    symbols = symbols[:int(max(1, max_universe))]
+
+    spy_df = get_data("SPY", "3mo", "1d")
+    qqq_df = get_data("QQQ", "3mo", "1d")
+    rows = []
+    for sym in symbols:
+        profile = discovery_profile(sym, spy_df, qqq_df)
+        if profile:
+            profile["Already In Manual Scan"] = sym in set(manual_symbols or [])
+            rows.append(profile)
+
+    if not rows:
+        return pd.DataFrame()
+
+    out = pd.DataFrame(rows)
+    out["Discovery Rank"] = out["Discovery Score"].rank(method="first", ascending=False).astype(int)
+    return out.sort_values(["Discovery Score", "RS Blend", "Rel Vol", "Dollar Volume"], ascending=False).reset_index(drop=True)
+
+
+def discovery_to_scan_symbols(manual_symbols, discovery_df, top_n=12, min_score=60, include_etfs=False):
+    out = []
+    seen = set()
+    for sym in manual_symbols:
+        sym = str(sym).strip().upper()
+        if sym and sym not in seen:
+            seen.add(sym)
+            out.append(sym)
+
+    if discovery_df is None or discovery_df.empty:
+        return out
+
+    candidates = discovery_df.copy()
+    if not include_etfs:
+        candidates = candidates[candidates["Sector"] != "ETF"]
+    candidates = candidates[candidates["Discovery Score"] >= int(min_score)]
+    candidates = candidates.head(int(max(0, top_n)))
+
+    for sym in candidates["Ticker"].tolist():
+        if sym not in seen:
+            seen.add(sym)
+            out.append(sym)
+    return out
+
+
+def opportunity_discovery_brief(discovery_df, expanded_symbols, manual_symbols, min_score):
+    if discovery_df is None or discovery_df.empty:
+        return "Opportunity Discovery Engine found no usable data. Keep the manual scan only."
+    active = discovery_df[discovery_df["Discovery Score"] >= min_score]
+    prime = discovery_df[discovery_df["Discovery Tier"] == "PRIME"]
+    top = discovery_df.iloc[0]
+    added = [s for s in expanded_symbols if s not in set(manual_symbols)]
+    lines = []
+    lines.append("OPPORTUNITY DISCOVERY ENGINE v35.3")
+    lines.append(f"Top discovery: {top['Ticker']} / {top['Discovery Tier']} / score {top['Discovery Score']} / {top['Discovery Reason']}.")
+    lines.append(f"Prime names: {len(prime)} | Active names above threshold: {len(active)} | Added to scan: {len(added)}.")
+    lines.append(f"Added tickers: {', '.join(added[:20]) if added else 'None; manual universe only.'}")
+    lines.append("Use this engine to expand the candidate pool; use v35.2 to approve or block real trades.")
+    return "\n".join(lines)
+
 # V35.2 DAILY PROFIT / TRADE PERMISSION ENGINE
 # ============================================================
 
@@ -3129,7 +3407,7 @@ st.title("Deon's Trader Dashboard v35.1")
 
 st.markdown("""
 <div class="v35-hero">
-  <h1>Daily Trader Mode v35.2.1</h1>
+  <h1>Daily Trader Mode v35.3.2.1</h1>
   <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
   <div class="v35-hero-row">
     <span class="v35-chip">⚡ Daily Setup Engine</span>
@@ -3234,6 +3512,21 @@ frequency_bias = st.sidebar.slider("Frequency vs selectivity", min_value=0, max_
 allow_short_watch = st.sidebar.checkbox("Show short-bias watchlist", value=True)
 st.sidebar.caption("Higher frequency increases candidates. Risk rules still control sizing and broker submission.")
 
+
+st.sidebar.subheader("Opportunity Discovery Engine")
+opportunity_discovery_enabled = st.sidebar.checkbox("Enable Opportunity Discovery", value=True)
+opportunity_universe_text = st.sidebar.text_area(
+    "Discovery Universe",
+    ",".join(OPPORTUNITY_DISCOVERY_UNIVERSE),
+    height=170,
+    help="The engine ranks this broader universe, then injects the strongest names into the v35.2 scan."
+)
+opportunity_max_universe = st.sidebar.slider("Discovery symbols to evaluate", min_value=20, max_value=120, value=70, step=5)
+opportunity_add_top_n = st.sidebar.slider("Add top discovery names to active scan", min_value=0, max_value=30, value=12, step=1)
+opportunity_min_score = st.sidebar.slider("Minimum discovery score to add", min_value=40, max_value=90, value=62, step=1)
+opportunity_include_etfs = st.sidebar.checkbox("Allow ETFs in expanded scan", value=False)
+st.sidebar.caption("Discovery expands the scan; it does not bypass v35.2 real-money permission rules.")
+
 st.sidebar.subheader("Temporary Alpaca API Connection")
 st.sidebar.caption("Use this because Streamlit Secrets is not editable right now. These values are not stored permanently.")
 temp_alpaca_key = st.sidebar.text_input("Alpaca API Key", type="password")
@@ -3264,9 +3557,26 @@ if st.sidebar.button("Refresh now"):
 market_df = market_context()
 light, regime, market_score, market_reason = market_state(market_df)
 
-symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
+manual_symbols = [x.strip().upper() for x in scan_text.split(",") if x.strip()]
+discovery_universe_symbols = parse_symbol_text(opportunity_universe_text)
 
-with st.spinner("Scanning technicals, news, sector rotation, earnings timing, premarket activity, and learning data..."):
+if opportunity_discovery_enabled:
+    with st.spinner("Running Opportunity Discovery Engine across the broader universe..."):
+        opportunity_df = build_opportunity_discovery(discovery_universe_symbols, manual_symbols, opportunity_max_universe)
+    symbols = discovery_to_scan_symbols(
+        manual_symbols,
+        opportunity_df,
+        top_n=opportunity_add_top_n,
+        min_score=opportunity_min_score,
+        include_etfs=opportunity_include_etfs,
+    )
+else:
+    opportunity_df = pd.DataFrame()
+    symbols = manual_symbols
+
+opportunity_brief = opportunity_discovery_brief(opportunity_df, symbols, manual_symbols, opportunity_min_score)
+
+with st.spinner("Scanning expanded technicals, news, sector rotation, earnings timing, premarket activity, and learning data..."):
     base_scan = run_scan(symbols, light, cash, risk_pct)
     manual_catalyst_df = parse_catalyst_text(catalyst_text)
     auto_catalyst_df = build_auto_catalysts(symbols, enabled=auto_news_enabled, max_symbols=auto_news_limit)
@@ -3316,9 +3626,9 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_2.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_2.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_2.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_3.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_3.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_3.csv", mime="text/csv")
 
 st.header("V35.2 — Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
@@ -3335,6 +3645,22 @@ elif daily_mode_value == "TRAIN":
 else:
     st.error(daily_mode_reason)
 st.text_area("V35.2 Operating Brief", v352_brief, height=220)
+
+st.header("V35.3 — Opportunity Discovery Engine")
+od1, od2, od3, od4 = st.columns(4)
+if opportunity_df is not None and not opportunity_df.empty:
+    added_count = len([s for s in symbols if s not in set(manual_symbols)])
+    od1.metric("Discovery Names", len(opportunity_df))
+    od2.metric("Added to Scan", added_count)
+    od3.metric("Top Discovery", opportunity_df.iloc[0]["Ticker"])
+    od4.metric("Top Score", int(opportunity_df.iloc[0]["Discovery Score"]))
+    st.text_area("Opportunity Brief", opportunity_brief, height=120)
+else:
+    od1.metric("Discovery Names", 0)
+    od2.metric("Added to Scan", 0)
+    od3.metric("Top Discovery", "None")
+    od4.metric("Top Score", 0)
+    st.info("Opportunity Discovery is disabled or no data was available. Manual scan is still active.")
 
 st.header("V35.1 — Today's Action Plan")
 action_plan_text = v351_today_action_plan(scan, light, market_score, market_reason)
@@ -3450,6 +3776,7 @@ tabs = st.tabs([
     "V35.1 Action Plan",
     "Rejection Audit",
     "Scan History",
+    "Opportunity Discovery",
     "V35.2 Profit Engine",
 ])
 
@@ -3954,11 +4281,31 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_2.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_3.csv", mime="text/csv")
 
 
 
 with tabs[20]:
+    st.header("Opportunity Discovery Engine")
+    st.write("This engine searches a broader universe for fresh movement, liquidity, relative strength, and structure before the v35.2 permission engine decides whether anything deserves real money.")
+    st.text_area("Discovery Brief", opportunity_brief, height=150)
+    if opportunity_df is None or opportunity_df.empty:
+        st.info("No discovery rows available. Enable the engine or reduce the minimum data requirements by scanning fewer symbols first.")
+    else:
+        od_cols = [
+            "Discovery Rank", "Ticker", "Sector", "Discovery Tier", "Discovery Score", "Discovery Action", "Discovery Setup", "Discovery Reason",
+            "Already In Manual Scan", "Price", "1D %", "5D %", "1M %", "Gap %", "Rel Vol", "Dollar Volume", "Liquidity",
+            "RS vs SPY", "RS vs QQQ", "RS Blend", "ATR %", "Above 20MA", "Above 50MA", "Trend Stack", "Near 20D High", "20D Breakout", "Distance 20MA %"
+        ]
+        od_cols = [c for c in od_cols if c in opportunity_df.columns]
+        st.dataframe(opportunity_df[od_cols], use_container_width=True, height=580)
+        active_added = [s for s in symbols if s not in set(manual_symbols)]
+        st.subheader("Expanded Active Scan")
+        st.write(", ".join(symbols))
+        st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_3.csv", mime="text/csv")
+
+with tabs[21]:
     st.header("V35.2 Profit Engine")
     st.text_area("Daily Operating Brief", v352_brief, height=260)
     st.subheader("Monthly Pace")
@@ -3980,4 +4327,4 @@ with tabs[20]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.2 adds a daily profit engine, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.3 adds the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
