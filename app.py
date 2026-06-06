@@ -10,7 +10,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35",
+    page_title="Deon's Trader Dashboard v35.1",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -322,7 +322,7 @@ hr {
 
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v35
+# DEON'S TRADER DASHBOARD v35.1
 # BROKER EXECUTION INFRASTRUCTURE BUILD
 #
 # Goal:
@@ -1460,7 +1460,9 @@ def catalyst_summary(scan):
 # EARNINGS / PREMARKET / LEARNING ENGINE
 # ============================================================
 
-LEARNING_FILE = "trade_learning_log_v35.csv"
+LEARNING_FILE = "trade_learning_log_v35_1.csv"
+SCAN_HISTORY_FILE = "scan_history_v35_1.csv"
+ROBINHOOD_MIRROR_FILE = "robinhood_mirror_v35_1.csv"
 
 def parse_earnings_text(text):
     """
@@ -2533,7 +2535,7 @@ def v35_robinhood_mirror_text(scan, cash):
     b = int((scan["Candidate Grade"] == "B").sum()) if "Candidate Grade" in scan.columns else 0
     leader = scan.iloc[0]
     lines = [
-        "ROBINHOOD REAL / ALPACA PAPER MIRROR v35",
+        "ROBINHOOD REAL / ALPACA PAPER MIRROR v35.1",
         f"Cash baseline: ${cash:,.2f}",
         f"A candidates: {a} | B candidates: {b}",
         f"Top mirror candidate: {leader['Ticker']} / Grade {leader.get('Candidate Grade', 'N/A')} / V35 Score {leader.get('V35 Score', 'N/A')}",
@@ -2541,6 +2543,154 @@ def v35_robinhood_mirror_text(scan, cash):
         "Safety: never route Alpaca live unless endpoint and arming phrase explicitly confirm live mode."
     ]
     return "\n".join(lines)
+
+
+# ============================================================
+# V35.1 DECISION AUDIT / SCAN HISTORY / REAL-PAPER MIRROR
+# ============================================================
+
+def v351_rejection_reason(row):
+    """Explains why a symbol is not a real-trade candidate right now."""
+    reasons = []
+    grade = str(row.get("Candidate Grade", ""))
+    verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
+    signal = str(row.get("Signal", "")).upper()
+    or_status = str(row.get("OR Status", ""))
+    above_vwap = bool(row.get("Above VWAP", False))
+    rr = safe_num(row.get("Reward/Risk", 0))
+    ev = safe_num(row.get("EV / Share", 0))
+    prof = safe_num(row.get("Professional Score", 0))
+    v35 = safe_num(row.get("V35 Score", 0))
+    mf = safe_num(row.get("Money Flow Score", 0))
+    shares = safe_num(row.get("Shares", 0))
+    risk = safe_num(row.get("Dollar Risk", 0))
+    catalyst = safe_num(row.get("Catalyst Score", 50))
+    earnings_timing = str(row.get("Earnings Timing", "")).lower()
+
+    if grade in ["A", "B"]:
+        return "Qualified review candidate; final decision still requires chart trigger and risk check."
+    if "AVOID" in verdict:
+        reasons.append("professional verdict is avoid/watch only")
+    if signal not in ["TRADE", "SMALL TRADE"]:
+        reasons.append("signal is not tradeable")
+    if or_status == "Below OR Low":
+        reasons.append("price is below opening-range low")
+    if not above_vwap:
+        reasons.append("price is not above VWAP")
+    if rr < 1.10:
+        reasons.append(f"reward/risk too low ({rr:.2f})")
+    if ev < -0.10:
+        reasons.append(f"expected value/share negative ({ev:.2f})")
+    if prof < 52:
+        reasons.append(f"professional score below review floor ({prof:.1f})")
+    if v35 < 50:
+        reasons.append(f"V35.1 score below active threshold ({v35:.1f})")
+    if mf < 50:
+        reasons.append(f"money-flow score weak ({mf:.0f})")
+    if shares <= 0 or risk <= 0:
+        reasons.append("no valid position size/risk plan")
+    if catalyst <= 25:
+        reasons.append(f"negative catalyst score ({catalyst:.0f})")
+    if "reports" in earnings_timing and "bmo" in earnings_timing:
+        reasons.append("earnings-before-open risk block")
+
+    return "; ".join(reasons[:5]) if reasons else "Not disqualified by one hard rule, but lacks enough combined confirmation."
+
+
+def v351_action_plan(row):
+    grade = str(row.get("Candidate Grade", "D"))
+    ticker = row.get("Ticker", "")
+    or_high = row.get("OR High", np.nan)
+    or_low = row.get("OR Low", np.nan)
+    vwap = row.get("VWAP", np.nan)
+    stop = row.get("Stop", np.nan)
+    setup = row.get("Best Setup", "")
+
+    if grade == "A":
+        return f"{ticker}: verify {setup} on chart; long only while holding VWAP {vwap} and above invalidation {max(safe_num(or_low), safe_num(stop)):.2f}."
+    if grade == "B":
+        return f"{ticker}: wait for trigger above OR high {or_high}; no entry if it rejects VWAP {vwap} or loses OR low {or_low}."
+    if grade == "C":
+        return f"{ticker}: keep on watch; upgrade only after VWAP reclaim plus stronger money flow/RS."
+    return f"{ticker}: skip. Do not force a trade until the rejection reasons clear."
+
+
+def add_v351_decision_audit(scan):
+    scan = scan.copy()
+    scan["V35.1 Score"] = (
+        scan["V35 Score"] * 0.55 +
+        scan["ORB Status Score"] * 0.15 +
+        scan["VWAP Confirm Score"] * 0.10 +
+        scan["Money Flow Score"] * 0.10 +
+        scan["RS Score"] * 0.05 +
+        scan["Premarket Score"] * 0.05
+    ).round(1)
+    scan["Rejection Reason"] = scan.apply(v351_rejection_reason, axis=1)
+    scan["Action Plan"] = scan.apply(v351_action_plan, axis=1)
+    scan["Real Trade Review"] = scan["Candidate Grade"].isin(["A", "B"])
+    scan["Paper Mirror Eligible"] = scan["Candidate Grade"].isin(["A", "B", "C"])
+    grade_rank = {"A": 4, "B": 3, "C": 2, "D": 1}
+    scan["V35.1 Rank"] = scan["Candidate Grade"].map(grade_rank).fillna(0) * 1000 + scan["V35.1 Score"]
+    return scan.sort_values(["V35.1 Rank", "Professional Score", "Money Flow Score"], ascending=False).reset_index(drop=True)
+
+
+def v351_today_action_plan(scan, market_light, market_score, market_reason):
+    lines = []
+    grade_counts = scan["Candidate Grade"].value_counts().to_dict() if "Candidate Grade" in scan.columns else {}
+    leader = scan.iloc[0]
+    review = scan[scan["Candidate Grade"].isin(["A", "B"])].copy()
+
+    lines.append("TODAY'S ACTION PLAN v35.1")
+    lines.append(f"Market state: {market_light} / {market_score}/100 / {market_reason}")
+    lines.append(f"Grades: A={grade_counts.get('A', 0)} | B={grade_counts.get('B', 0)} | C={grade_counts.get('C', 0)} | D={grade_counts.get('D', 0)}")
+
+    if not review.empty:
+        top = review.iloc[0]
+        lines.append(f"Primary review: {top['Ticker']} / Grade {top['Candidate Grade']} / V35.1 {top['V35.1 Score']} / {top['Best Setup']}")
+        lines.append(f"Trigger: {top['Action Plan']}")
+        lines.append(f"Risk plan: entry ref {top['Price']} / stop {top['Stop']} / T1 {top['Target 1']} / shares {top['Shares']} / max risk ${top['Dollar Risk']}")
+    else:
+        lines.append(f"No A/B real-trade review names. Strongest monitor: {leader['Ticker']} / Grade {leader.get('Candidate Grade', 'N/A')} / reason: {leader.get('Rejection Reason', '')}")
+
+    lines.append("Rule: Robinhood real trade requires A/B grade + chart trigger + defined stop. Alpaca paper can mirror A/B and optionally test C with tiny size only.")
+    return "\n".join(lines)
+
+
+def v351_scan_history_row(scan, market_light, market_score, market_reason):
+    grade_counts = scan["Candidate Grade"].value_counts().to_dict() if "Candidate Grade" in scan.columns else {}
+    leader = scan.iloc[0]
+    return {
+        "Timestamp CT": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Market Light": market_light,
+        "Market Score": market_score,
+        "Market Reason": market_reason,
+        "Scanned": len(scan),
+        "Grade A": int(grade_counts.get("A", 0)),
+        "Grade B": int(grade_counts.get("B", 0)),
+        "Grade C": int(grade_counts.get("C", 0)),
+        "Grade D": int(grade_counts.get("D", 0)),
+        "Top Ticker": leader.get("Ticker", ""),
+        "Top Grade": leader.get("Candidate Grade", ""),
+        "Top V35.1 Score": leader.get("V35.1 Score", np.nan),
+        "Top Setup": leader.get("Best Setup", ""),
+        "Top Action Plan": leader.get("Action Plan", ""),
+    }
+
+
+def load_csv_file(path, columns=None):
+    try:
+        if Path(path).exists():
+            return pd.read_csv(path)
+    except Exception:
+        pass
+    return pd.DataFrame(columns=columns or [])
+
+
+def append_csv_row(path, row):
+    existing = load_csv_file(path)
+    out = pd.concat([existing, pd.DataFrame([row])], ignore_index=True)
+    out.to_csv(path, index=False)
+    return out
 
 # ============================================================
 # PACKETS / SUMMARY
@@ -2773,11 +2923,11 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v35")
+st.title("Deon's Trader Dashboard v35.1")
 
 st.markdown("""
 <div class="v35-hero">
-  <h1>Daily Trader Mode v35</h1>
+  <h1>Daily Trader Mode v35.1</h1>
   <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
   <div class="v35-hero-row">
     <span class="v35-chip">⚡ Daily Setup Engine</span>
@@ -2921,6 +3071,7 @@ with st.spinner("Scanning technicals, news, sector rotation, earnings timing, pr
     scan = apply_learning_scores(scan, learning_log)
     scan = add_v31_scores(scan)
     scan = add_v35_scores(scan)
+    scan = add_v351_decision_audit(scan)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
@@ -2947,9 +3098,16 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_1.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_1.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_1.csv", mime="text/csv")
+
+st.header("V35.1 — Today's Action Plan")
+action_plan_text = v351_today_action_plan(scan, light, market_score, market_reason)
+st.text_area("Action Plan", action_plan_text, height=190)
+if st.button("Save Current Scan Snapshot"):
+    hist = append_csv_row(SCAN_HISTORY_FILE, v351_scan_history_row(scan, light, market_score, market_reason))
+    st.success(f"Saved scan snapshot. History rows: {len(hist)}")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -3055,6 +3213,9 @@ tabs = st.tabs([
     "Broker Execution",
     "Robinhood Mirror",
     "Charts",
+    "V35.1 Action Plan",
+    "Rejection Audit",
+    "Scan History",
 ])
 
 with tabs[0]:
@@ -3140,7 +3301,7 @@ with tabs[3]:
 with tabs[4]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v35.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v35_1.json", mime="application/json")
 
 with tabs[5]:
     st.header("Sector Flow")
@@ -3170,7 +3331,7 @@ with tabs[7]:
         no_trade[[
             "Ticker", "Composite Verdict", "Signal", "Tier", "Best Setup", "Composite Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "External Score", "Money Flow Score",
             "Best Score", "Reason", "Price", "EV / Share", "Reward/Risk",
-            "Above VWAP", "OR Status", "OR Zone", "RS Score"
+            "Above VWAP", "OR Status", "OR Zone", "RS Score", "Rejection Reason"
         ]],
         use_container_width=True,
         height=500,
@@ -3461,19 +3622,52 @@ with tabs[14]:
 
 
 with tabs[15]:
-    st.header("Robinhood Mirror")
-    st.write("Use this as the real-money checklist. Alpaca remains the paper mirror unless you deliberately configure live trading.")
+    st.header("Robinhood Real / Alpaca Paper Mirror")
+    st.write("This is the real-money operating checklist. Robinhood remains manual; Alpaca remains the paper mirror unless you deliberately configure live trading.")
     st.text_area("Mirror Plan", v35_robinhood_mirror_text(scan, cash), height=180)
-    st.subheader("Real Trade Candidates")
+
+    st.subheader("Manual Robinhood Fill Log")
+    with st.form("robinhood_mirror_form", clear_on_submit=True):
+        r1, r2, r3, r4 = st.columns(4)
+        rh_date = r1.date_input("Trade date", value=date.today())
+        rh_ticker = r2.selectbox("Ticker", scan["Ticker"].tolist(), key="rh_ticker")
+        rh_side = r3.selectbox("Side", ["BUY", "SELL", "NO TRADE"], key="rh_side")
+        rh_account = r4.selectbox("Account", ["Robinhood real", "Alpaca paper", "Both"], key="rh_account")
+        r5, r6, r7, r8 = st.columns(4)
+        rh_entry = r5.number_input("Fill/entry", min_value=0.0, step=0.01)
+        rh_shares = r6.number_input("Shares", min_value=0.0, step=0.0001, format="%.6f")
+        rh_stop = r7.number_input("Planned stop", min_value=0.0, step=0.01)
+        rh_target = r8.number_input("Target / note price", min_value=0.0, step=0.01)
+        rh_notes = st.text_input("Notes / trigger observed")
+        if st.form_submit_button("Save Mirror Fill"):
+            saved = append_csv_row(ROBINHOOD_MIRROR_FILE, {
+                "Timestamp CT": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Trade Date": rh_date.isoformat(),
+                "Ticker": rh_ticker,
+                "Side": rh_side,
+                "Account": rh_account,
+                "Entry": rh_entry,
+                "Shares": rh_shares,
+                "Stop": rh_stop,
+                "Target": rh_target,
+                "Notes": rh_notes,
+            })
+            st.success(f"Saved mirror row. Total rows: {len(saved)}")
+
+    st.subheader("Real Trade Review Queue")
     st.dataframe(
         scan[scan["Candidate Grade"].isin(["A", "B"])][[
-            "Ticker", "Candidate Grade", "V35 Score", "Professional Verdict", "V35 Trigger",
+            "Ticker", "Candidate Grade", "V35.1 Score", "Professional Verdict", "Action Plan",
             "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk", "Best Setup", "Reason"
         ]],
         use_container_width=True,
         height=360,
     )
-    st.warning("Robinhood trades are manual only. Confirm chart, size, stop, and invalidation before placing any real order.")
+    mirror_log = load_csv_file(ROBINHOOD_MIRROR_FILE)
+    if not mirror_log.empty:
+        st.subheader("Saved Mirror Fills")
+        st.dataframe(mirror_log.tail(20), use_container_width=True)
+    st.warning("A real Robinhood entry requires: Grade A/B, observed trigger, defined stop, and position size you are willing to lose to the stop.")
 
 with tabs[16]:
     st.header("Charts")
@@ -3489,4 +3683,43 @@ with tabs[16]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v35 adds a full trade-desk visual refresh using the dark-teal, emerald, and blue theme.")
+
+with tabs[17]:
+    st.header("V35.1 Action Plan")
+    st.text_area("Today's Operating Plan", v351_today_action_plan(scan, light, market_score, market_reason), height=260)
+    st.subheader("Top Review Names")
+    st.dataframe(
+        scan[[
+            "Ticker", "Candidate Grade", "V35.1 Score", "Action Plan", "Professional Verdict", "Best Setup",
+            "Price", "Stop", "Target 1", "Shares", "Dollar Risk", "Above VWAP", "OR Status", "OR Zone"
+        ]].head(12),
+        use_container_width=True,
+        height=420,
+    )
+
+with tabs[18]:
+    st.header("Rejection Audit")
+    st.write("This tab explains why symbols are not eligible for real-money review. Use it to tune candidate generation without weakening risk rules.")
+    audit_cols = [
+        "Ticker", "Candidate Grade", "Real Trade Review", "Paper Mirror Eligible", "Rejection Reason",
+        "Professional Verdict", "Signal", "V35.1 Score", "Money Flow Score", "Reward/Risk", "EV / Share",
+        "Above VWAP", "OR Status", "OR Zone", "Catalyst Score", "Earnings Timing"
+    ]
+    audit_cols = [c for c in audit_cols if c in scan.columns]
+    st.dataframe(scan[audit_cols], use_container_width=True, height=560)
+
+with tabs[19]:
+    st.header("Scan History")
+    st.write("Save snapshots during the day to learn whether your best candidates appear premarket, at the open, mid-day, or near the close.")
+    if st.button("Save Snapshot From History Tab"):
+        hist = append_csv_row(SCAN_HISTORY_FILE, v351_scan_history_row(scan, light, market_score, market_reason))
+        st.success(f"Saved scan snapshot. History rows: {len(hist)}")
+    hist = load_csv_file(SCAN_HISTORY_FILE)
+    if hist.empty:
+        st.info("No saved scan snapshots yet.")
+    else:
+        st.dataframe(hist.tail(50), use_container_width=True, height=520)
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_1.csv", mime="text/csv")
+
+
+st.caption("v35.1 adds decision audit, persistent scan history, rejection reasons, and a stronger Robinhood/Alpaca mirror workflow.")
