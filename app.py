@@ -1,5 +1,6 @@
 
 import json
+import html
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -11,7 +12,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.3 Opportunity Discovery",
+    page_title="Deon's Trader Dashboard v35.3 Deep UI",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -541,6 +542,70 @@ div[data-testid="stAlert"] {
     .v35-trade-desk-grid { grid-template-columns: 1fr; }
     .v35-card-value { font-size: 1.45rem; }
 }
+
+
+/* ============================================================
+   V35.3 DEEP UI PASS — command center depth, contrast, and hierarchy
+   ============================================================ */
+:root {
+    --v35-panel: rgba(255,255,255,.86);
+    --v35-panel-strong: rgba(255,255,255,.96);
+    --v35-ink: #061622;
+    --v35-muted: #64748b;
+    --v35-line: rgba(15,118,110,.18);
+}
+.block-container:before {
+    content:"";
+    position: fixed;
+    inset: 0;
+    pointer-events:none;
+    background-image:
+        linear-gradient(rgba(15,118,110,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37,99,235,.03) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(180deg, rgba(0,0,0,.45), transparent 70%);
+}
+.v35-hero { min-height: 210px; }
+.v35-hero:before {
+    content:""; position:absolute; inset:0;
+    background: linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 34px 34px; opacity:.35;
+}
+.v35-hero h1, .v35-hero p, .v35-hero-row, .v35-kicker { z-index: 1; }
+.v35-command-strip { display:grid; grid-template-columns: 1.15fr 1fr 1fr; gap:14px; margin: 8px 0 20px; }
+.v35-command-panel { position:relative; overflow:hidden; border-radius: 24px; padding: 18px 20px; background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(241,248,249,.93)); border: 1px solid rgba(15,118,110,.20); box-shadow: 0 18px 44px rgba(6,22,34,.08); }
+.v35-command-panel.dark { background: radial-gradient(circle at 92% 10%, rgba(56,189,248,.22), transparent 28%), linear-gradient(135deg, #061622 0%, #083344 54%, #0f766e 100%); color:white; border-color: rgba(255,255,255,.14); }
+.v35-command-panel.dark .v35-command-label, .v35-command-panel.dark .v35-command-note { color: rgba(255,255,255,.74); }
+.v35-command-label { color:#64748b; font-weight:950; text-transform:uppercase; letter-spacing:.08em; font-size:.72rem; margin-bottom:8px; }
+.v35-command-main { font-weight:950; letter-spacing:-.045em; font-size:1.55rem; line-height:1.05; }
+.v35-command-note { margin-top:9px; color:#475569; font-weight:700; font-size:.88rem; }
+.v35-lane-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; margin: 12px 0 22px; }
+.v35-lane-card { border-radius:22px; padding:18px 19px; background: rgba(255,255,255,.94); border:1px solid rgba(15,118,110,.18); box-shadow: 0 16px 40px rgba(6,22,34,.07); position:relative; overflow:hidden; }
+.v35-lane-card:before { content:""; position:absolute; left:0; top:0; bottom:0; width:7px; background: linear-gradient(180deg, #061622, #0f766e, #2563eb); }
+.v35-lane-title { font-size:.78rem; font-weight:950; letter-spacing:.08em; text-transform:uppercase; color:#0f766e; margin-left:4px; }
+.v35-lane-value { margin-top:8px; margin-left:4px; font-size:1.32rem; font-weight:950; color:#061622; letter-spacing:-.04em; }
+.v35-lane-detail { margin-top:8px; margin-left:4px; color:#475569; font-weight:700; font-size:.88rem; line-height:1.42; }
+.v35-tile-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; margin: 8px 0 24px; }
+.v35-opportunity-tile { position:relative; overflow:hidden; border-radius:24px; padding:18px 18px 17px; background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.95)); border:1px solid rgba(15,118,110,.18); box-shadow: 0 18px 44px rgba(6,22,34,.075); }
+.v35-opportunity-tile:after { content:""; position:absolute; right:-70px; top:-70px; width:160px; height:160px; background: radial-gradient(circle, rgba(37,99,235,.16), transparent 68%); border-radius:50%; }
+.v35-tile-rank { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:12px; background: linear-gradient(135deg, #061622, #0f766e); color:white; font-weight:950; margin-bottom:10px; }
+.v35-tile-ticker { font-size:1.9rem; font-weight:950; color:#061622; letter-spacing:-.06em; line-height:1; }
+.v35-tile-meta { color:#64748b; font-weight:800; margin-top:5px; font-size:.86rem; }
+.v35-tile-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:13px; }
+.v35-mini-pill { display:inline-flex; padding:6px 9px; border-radius:999px; font-size:.74rem; font-weight:950; border:1px solid rgba(15,118,110,.16); background:#f8fafc; color:#083344; }
+.v35-mini-pill.ok { background:#dcfce7; color:#166534; }
+.v35-mini-pill.warn { background:#fef3c7; color:#92400e; }
+.v35-mini-pill.paper { background:#dbeafe; color:#1e40af; }
+.v35-mini-pill.block { background:#fee2e2; color:#991b1b; }
+.v35-tile-trigger { margin-top:12px; padding:12px 13px; border-radius:16px; background: linear-gradient(180deg, #f8fafc, #eef6f7); color:#334155; font-weight:750; font-size:.85rem; line-height:1.42; border:1px solid rgba(15,118,110,.13); }
+.v35-divider-title { display:flex; align-items:center; gap:10px; margin: 24px 0 10px; color:#061622; font-weight:950; letter-spacing:-.04em; font-size:1.25rem; }
+.v35-divider-title:before { content:""; display:block; width:36px; height:10px; border-radius:999px; background: linear-gradient(90deg, #061622, #0f766e, #2563eb); }
+.v35-divider-title:after { content:""; flex:1; height:1px; background: linear-gradient(90deg, rgba(15,118,110,.32), transparent); }
+.stButton button, .stDownloadButton button { background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(241,248,249,.95)) !important; color:#061622 !important; }
+.stButton button:hover, .stDownloadButton button:hover { background: linear-gradient(90deg, #083344, #0f766e, #2563eb) !important; color:white !important; transform: translateY(-1px); }
+[data-testid="stExpander"] { border-radius: 18px !important; border: 1px solid rgba(15,118,110,.16) !important; box-shadow: 0 10px 28px rgba(6,22,34,.045); overflow:hidden; }
+[data-testid="stExpander"] summary { font-weight:950 !important; color:#083344 !important; }
+@media (max-width: 1100px) { .v35-command-strip, .v35-lane-grid, .v35-tile-grid { grid-template-columns: 1fr; } }
 
 </style>
 """, unsafe_allow_html=True)
@@ -3625,15 +3690,108 @@ def make_chart(ticker, timeframe):
         fig.add_hline(y=df.head(3)["High"].max(), line_dash="dash", annotation_text="OR High")
         fig.add_hline(y=df.head(3)["Low"].min(), line_dash="dash", annotation_text="OR Low")
 
-    fig.update_layout(height=550, xaxis_rangeslider_visible=False)
+    fig.update_layout(
+        height=550,
+        xaxis_rangeslider_visible=False,
+        paper_bgcolor="rgba(248,250,252,0)",
+        plot_bgcolor="rgba(255,255,255,.86)",
+        font=dict(color="#061622", family="Inter, sans-serif"),
+        margin=dict(l=20, r=20, t=35, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor="rgba(15,118,110,.10)", zerolinecolor="rgba(15,118,110,.12)"),
+        yaxis=dict(gridcolor="rgba(15,118,110,.10)", zerolinecolor="rgba(15,118,110,.12)"),
+    )
     return fig
 
+
+
+def ui_escape(value):
+    return html.escape(str(value))
+
+
+def permission_pill_class(permission):
+    p = str(permission).upper()
+    if "REAL OK" in p:
+        return "ok"
+    if "REAL REDUCED" in p:
+        return "warn"
+    if "PAPER" in p:
+        return "paper"
+    return "block"
+
+
+def render_v353_opportunity_tiles(scan_df):
+    if scan_df is None or scan_df.empty:
+        return ""
+    rows = []
+    for rank, (_, row) in enumerate(scan_df.head(3).iterrows(), 1):
+        ticker = ui_escape(row.get("Ticker", ""))
+        sector = ui_escape(row.get("Sector", ""))
+        permission = ui_escape(row.get("V35.2 Permission", row.get("Professional Verdict", "")))
+        grade = ui_escape(row.get("Candidate Grade", ""))
+        score = ui_escape(row.get("V35.2 Priority Score", row.get("Professional Score", "")))
+        setup = ui_escape(row.get("Best Setup", ""))
+        trigger = ui_escape(row.get("Action Plan", row.get("V35 Trigger", row.get("Reason", ""))))
+        risk = ui_escape(row.get("Allowed Risk $", row.get("Dollar Risk", "")))
+        shares = ui_escape(row.get("Shares", ""))
+        pill = permission_pill_class(permission)
+        rows.append(f"""
+        <div class="v35-opportunity-tile">
+          <div class="v35-tile-rank">#{rank}</div>
+          <div class="v35-tile-ticker">{ticker}</div>
+          <div class="v35-tile-meta">{sector} · {setup}</div>
+          <div class="v35-tile-row">
+            <span class="v35-mini-pill {pill}">{permission}</span>
+            <span class="v35-mini-pill">Grade {grade}</span>
+            <span class="v35-mini-pill">Score {score}</span>
+            <span class="v35-mini-pill">Risk ${risk}</span>
+            <span class="v35-mini-pill">Shares {shares}</span>
+          </div>
+          <div class="v35-tile-trigger">{trigger}</div>
+        </div>
+        """)
+    return '<div class="v35-tile-grid">' + ''.join(rows) + '</div>'
+
+
+def render_v353_command_strip(daily_mode_value, month_math, scan_df, opportunity_df):
+    best_permission = "No real candidate"
+    best_ticker = "None"
+    best_action = "No active permission yet"
+    try:
+        eligible = scan_df[scan_df.get("V35.2 Permission", "").isin(["REAL OK", "REAL REDUCED"])]
+        if not eligible.empty:
+            r = eligible.iloc[0]
+            best_ticker = r.get("Ticker", "None")
+            best_permission = r.get("V35.2 Permission", "")
+            best_action = r.get("Action Plan", r.get("V35 Trigger", "Verify chart trigger"))
+    except Exception:
+        pass
+    discovery_count = 0 if opportunity_df is None or opportunity_df.empty else len(opportunity_df)
+    return f"""
+    <div class="v35-command-strip">
+      <div class="v35-command-panel dark">
+        <div class="v35-command-label">Primary Decision</div>
+        <div class="v35-command-main">{ui_escape(daily_mode_value)} · {ui_escape(best_ticker)}</div>
+        <div class="v35-command-note">{ui_escape(best_permission)} — {ui_escape(best_action)}</div>
+      </div>
+      <div class="v35-command-panel">
+        <div class="v35-command-label">20% Target Lens</div>
+        <div class="v35-command-main">{ui_escape(month_math.get('Monthly Status',''))}</div>
+        <div class="v35-command-note">Needed/day ${ui_escape(month_math.get('Needed $ / Day',''))} · remaining target ${ui_escape(month_math.get('Remaining Target $',''))}</div>
+      </div>
+      <div class="v35-command-panel">
+        <div class="v35-command-label">Discovery Breadth</div>
+        <div class="v35-command-main">{discovery_count} names ranked</div>
+        <div class="v35-command-note">The wide net feeds candidates into the same v35.2 real-money gate.</div>
+      </div>
+    </div>
+    """
 
 # ============================================================
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v35.3 — Opportunity Discovery")
+st.title("Deon's Trader Dashboard v35.3 — Opportunity Command UI")
 
 st.markdown("""
 <div class="v35-hero v35-hero-boost">
@@ -3882,6 +4040,32 @@ st.markdown(f"""
 <div class="v35-banner">
   <div class="v35-banner-title">Color System Upgrade</div>
   <div class="v35-banner-text">Dark navy marks control and risk. Teal marks qualified opportunity. Emerald marks permission or improvement. Blue marks discovery and data. Red/yellow system alerts still override everything when protection is required.</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="v35-divider-title">Decision cockpit</div>', unsafe_allow_html=True)
+st.markdown(render_v353_command_strip(daily_mode_value, month_math, scan, opportunity_df), unsafe_allow_html=True)
+
+st.markdown('<div class="v35-divider-title">Top actionable tiles</div>', unsafe_allow_html=True)
+st.markdown(render_v353_opportunity_tiles(scan), unsafe_allow_html=True)
+
+st.markdown("""
+<div class="v35-lane-grid">
+  <div class="v35-lane-card">
+    <div class="v35-lane-title">Lane 1 · Discovery</div>
+    <div class="v35-lane-value">Find the move</div>
+    <div class="v35-lane-detail">Relative strength, volume expansion, trend structure, liquidity, gap quality, and high proximity decide what enters the active scan.</div>
+  </div>
+  <div class="v35-lane-card">
+    <div class="v35-lane-title">Lane 2 · Permission</div>
+    <div class="v35-lane-value">Protect real money</div>
+    <div class="v35-lane-detail">v35.2 still controls Robinhood eligibility with daily mode, monthly pace, reward/risk, EV, VWAP, OR status, and risk limits.</div>
+  </div>
+  <div class="v35-lane-card">
+    <div class="v35-lane-title">Lane 3 · Execution</div>
+    <div class="v35-lane-value">Scale with intent</div>
+    <div class="v35-lane-detail">Execution ladders and Alpaca paper mirrors exist after permission is granted; rejected names stay in the audit trail.</div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
