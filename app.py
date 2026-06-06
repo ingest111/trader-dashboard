@@ -1,6 +1,7 @@
 
 import json
 from datetime import datetime, date
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,7 +10,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v34",
+    page_title="Deon's Trader Dashboard v35",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -18,23 +19,23 @@ st.set_page_config(
 st.markdown("""
 <style>
 /* ============================================================
-   V34 VISUAL SYSTEM
+   V35 VISUAL SYSTEM
    Palette based on user's preferred hero screenshot:
    midnight teal -> deep emerald -> electric blue
    ============================================================ */
 
 :root {
-    --v34-navy: #061622;
-    --v34-teal-dark: #083344;
-    --v34-teal: #0f766e;
-    --v34-emerald: #10b981;
-    --v34-blue: #2563eb;
-    --v34-blue2: #1d4ed8;
-    --v34-cyan: #38bdf8;
-    --v34-slate: #334155;
-    --v34-soft: #f8fafc;
-    --v34-border: rgba(15, 118, 110, 0.22);
-    --v34-shadow: 0 20px 48px rgba(6, 22, 34, .16);
+    --v35-navy: #061622;
+    --v35-teal-dark: #083344;
+    --v35-teal: #0f766e;
+    --v35-emerald: #10b981;
+    --v35-blue: #2563eb;
+    --v35-blue2: #1d4ed8;
+    --v35-cyan: #38bdf8;
+    --v35-slate: #334155;
+    --v35-soft: #f8fafc;
+    --v35-border: rgba(15, 118, 110, 0.22);
+    --v35-shadow: 0 20px 48px rgba(6, 22, 34, .16);
 }
 
 html, body, [class*="css"] {
@@ -103,7 +104,7 @@ h1 {
 }
 
 /* Hero */
-.v34-hero {
+.v35-hero {
     position: relative;
     overflow: hidden;
     padding: 30px 34px;
@@ -118,7 +119,7 @@ h1 {
     border: 1px solid rgba(255,255,255,.14);
 }
 
-.v34-hero:after {
+.v35-hero:after {
     content: "";
     position: absolute;
     width: 420px;
@@ -129,7 +130,7 @@ h1 {
     transform: rotate(20deg);
 }
 
-.v34-hero h1 {
+.v35-hero h1 {
     position: relative;
     margin: 0;
     color: white !important;
@@ -138,7 +139,7 @@ h1 {
     letter-spacing: -0.055em;
 }
 
-.v34-hero p {
+.v35-hero p {
     position: relative;
     margin: 10px 0 0 0;
     color: rgba(255,255,255,.86);
@@ -146,7 +147,7 @@ h1 {
     font-weight: 550;
 }
 
-.v34-hero-row {
+.v35-hero-row {
     position: relative;
     margin-top: 18px;
     display: flex;
@@ -154,7 +155,7 @@ h1 {
     flex-wrap: wrap;
 }
 
-.v34-chip {
+.v35-chip {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -173,7 +174,7 @@ div[data-testid="stMetric"] {
     background:
         linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96)),
         linear-gradient(135deg, rgba(15,118,110,.08), rgba(37,99,235,.07));
-    border: 1px solid var(--v34-border);
+    border: 1px solid var(--v35-border);
     padding: 18px 18px;
     border-radius: 20px;
     box-shadow: 0 14px 32px rgba(6, 22, 34, .08);
@@ -257,7 +258,7 @@ button[kind="primary"] {
 }
 
 /* Cards and badges */
-.v34-card {
+.v35-card {
     border: 1px solid rgba(15,118,110,.22);
     border-radius: 22px;
     padding: 18px 20px;
@@ -267,17 +268,17 @@ button[kind="primary"] {
     margin-bottom: 16px;
 }
 
-.v34-card-dark {
+.v35-card-dark {
     border: 1px solid rgba(255,255,255,.14);
     border-radius: 22px;
     padding: 18px 20px;
     background: linear-gradient(135deg, #061622 0%, #083344 48%, #0f766e 100%);
     color: white;
-    box-shadow: var(--v34-shadow);
+    box-shadow: var(--v35-shadow);
     margin-bottom: 16px;
 }
 
-.v34-section-title {
+.v35-section-title {
     font-size: 1.35rem;
     font-weight: 950;
     margin-top: 22px;
@@ -286,7 +287,7 @@ button[kind="primary"] {
     color: #061622;
 }
 
-.v34-pill {
+.v35-pill {
     display: inline-block;
     padding: 7px 12px;
     border-radius: 999px;
@@ -321,7 +322,7 @@ hr {
 
 
 # ============================================================
-# DEON'S TRADER DASHBOARD v31
+# DEON'S TRADER DASHBOARD v35
 # BROKER EXECUTION INFRASTRUCTURE BUILD
 #
 # Goal:
@@ -332,8 +333,6 @@ hr {
 # - Explicit TRADE / WAIT / AVOID operating logic.
 # - Chart screenshot only when a setup is close.
 # ============================================================
-
-st.set_page_config(page_title="Deon's Trader Dashboard v34", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1375,7 +1374,7 @@ def add_multi_source_scores(scan):
     scan["Sector Component"] = scan["Sector Rotation Score"].fillna(50)
     scan["External Component"] = scan["External Score"].fillna(50)
 
-    # Composite score. This is v31's main ranking score.
+    # Composite score. This is v35's main ranking score.
     scan["Composite Score"] = (
         (scan["Technical Score"] * 0.25)
         + (scan["Money Flow Component"] * 0.25)
@@ -1461,7 +1460,7 @@ def catalyst_summary(scan):
 # EARNINGS / PREMARKET / LEARNING ENGINE
 # ============================================================
 
-LEARNING_FILE = "trade_learning_log_v31.csv"
+LEARNING_FILE = "trade_learning_log_v35.csv"
 
 def parse_earnings_text(text):
     """
@@ -1768,12 +1767,12 @@ def add_v31_scores(scan):
 
 def v31_summary(scan):
     if scan.empty or "Professional Score" not in scan.columns:
-        return "No v31 professional score available."
+        return "No v35 professional score available."
 
     leader = scan.iloc[0]
 
     lines = []
-    lines.append("V31 PROFESSIONAL LAYERS")
+    lines.append("V35 PROFESSIONAL LAYERS")
     lines.append(
         f"Top professional score: {leader['Ticker']} / {leader['Professional Score']} / "
         f"{leader['Professional Verdict']}"
@@ -2087,7 +2086,7 @@ def execution_packet(row, ladder_plan):
 
     s = ladder_plan["summary"]
     lines = []
-    lines.append("TRADE EXECUTION ENGINE v34")
+    lines.append("TRADE EXECUTION ENGINE v35")
     lines.append(f"Ticker: {s['Ticker']}")
     lines.append(f"Entry style: {s['Entry Style']}")
     lines.append(f"Reference entry: {s['Reference Entry']}")
@@ -2406,14 +2405,14 @@ def v34_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=
             return "WATCH ACTIVE"
         return "NO TRADE"
 
-    board["V34 Action"] = board.apply(action, axis=1)
+    board["V35 Action"] = board.apply(action, axis=1)
     board = board.sort_values(
         ["Daily Trader Qualified", "Trade Frequency Score", "Total Opportunity Score"],
         ascending=[False, False, False],
     )
 
     cols = [
-        "Ticker", "Sector", "V34 Action", "Bias", "Playbook", "Tier",
+        "Ticker", "Sector", "V35 Action", "Bias", "Playbook", "Tier",
         "Trade Frequency Score", "Professional Score", "Composite Score",
         "Total Opportunity Score", "Money Flow Score", "Best Score",
         "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk",
@@ -2421,6 +2420,127 @@ def v34_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=
     ]
     cols = [c for c in cols if c in board.columns]
     return board[cols].head(max(candidate_goal, 3))
+
+
+# ============================================================
+# V35 CANDIDATE GRADING / ORB ENGINE / BROKER MIRROR
+# ============================================================
+
+def v35_candidate_grade(row):
+    """A/B/C/D grading keeps daily workflow useful without weakening risk gates."""
+    prof = safe_num(row.get("Professional Score", 0))
+    comp = safe_num(row.get("Composite Score", 0))
+    mf = safe_num(row.get("Money Flow Score", 0))
+    orb = safe_num(row.get("ORB Score", 0))
+    vwap = safe_num(row.get("VWAP Score", 0))
+    rs = safe_num(row.get("RS Score", 0))
+    ev = safe_num(row.get("EV / Share", 0))
+    rr = safe_num(row.get("Reward/Risk", 0))
+    verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
+    signal = str(row.get("Signal", "")).upper()
+    or_status = str(row.get("OR Status", ""))
+    above_vwap = bool(row.get("Above VWAP", False))
+    earnings_timing = str(row.get("Earnings Timing", "")).lower()
+    catalyst = safe_num(row.get("Catalyst Score", 50))
+
+    broken = or_status == "Below OR Low"
+    earnings_block = "reports" in earnings_timing and "bmo" in earnings_timing
+
+    if earnings_block or catalyst <= 20 or (broken and not above_vwap):
+        return "D", "Blocked by earnings/catalyst/OR breakdown risk"
+
+    if signal == "TRADE" and "AVOID" not in verdict and prof >= 72 and mf >= 58 and rr >= 1.2 and ev >= -0.10 and above_vwap:
+        return "A", "Actionable after chart/trigger confirmation"
+
+    if ("WAIT" in verdict or signal in ["SMALL TRADE", "WATCH"]) and prof >= 52 and max(orb, vwap, mf, comp) >= 52 and rr >= 1.1 and not broken:
+        return "B", "Close candidate; needs OR/VWAP trigger"
+
+    if max(prof, comp, mf, rs) >= 40 or row.get("Chart Needed", False):
+        return "C", "Watchlist only; useful but not ready"
+
+    return "D", "Ignore until structure improves"
+
+
+def v35_orb_status_score(row):
+    or_status = str(row.get("OR Status", "Unknown"))
+    or_zone = str(row.get("OR Zone", "Unknown"))
+    above_vwap = bool(row.get("Above VWAP", False))
+    rs = safe_num(row.get("RS Score", 0))
+    rvol = safe_num(row.get("Rel Vol", 0))
+    score = 50
+    if or_status == "Above OR High": score += 25
+    elif or_zone in ["Near breakout", "Upper range"]: score += 12
+    elif or_status == "Below OR Low": score -= 30
+    if above_vwap: score += 12
+    else: score -= 8
+    if rs >= 70: score += 8
+    elif rs >= 60: score += 4
+    if rvol >= 1.5: score += 5
+    elif rvol < 0.75: score -= 5
+    return int(max(0, min(100, score)))
+
+
+def v35_trigger_text(row):
+    grade = str(row.get("Candidate Grade", ""))
+    ticker = row.get("Ticker", "")
+    or_high = row.get("OR High", np.nan)
+    or_low = row.get("OR Low", np.nan)
+    vwap = row.get("VWAP", np.nan)
+    price = row.get("Price", np.nan)
+    if grade == "A":
+        return f"{ticker}: confirm price holds above VWAP {vwap} and does not lose OR low {or_low}."
+    if grade == "B":
+        return f"{ticker}: trigger only on reclaim/break above OR high {or_high} with VWAP hold near {vwap}."
+    if grade == "C":
+        return f"{ticker}: watch only; needs VWAP reclaim and stronger flow before sizing."
+    return f"{ticker}: no trigger; ignore until above VWAP/OR structure improves."
+
+
+def add_v35_scores(scan):
+    scan = scan.copy()
+    grades = scan.apply(v35_candidate_grade, axis=1)
+    scan["Candidate Grade"] = [g[0] for g in grades]
+    scan["Grade Reason"] = [g[1] for g in grades]
+    scan["ORB Status Score"] = scan.apply(v35_orb_status_score, axis=1)
+    scan["VWAP Confirm Score"] = np.where(scan["Above VWAP"], 70, 35)
+    scan["V35 Score"] = (
+        scan["Professional Score"] * 0.32 +
+        scan["Money Flow Score"] * 0.22 +
+        scan["ORB Status Score"] * 0.18 +
+        scan["VWAP Confirm Score"] * 0.10 +
+        scan["Learning Score"] * 0.08 +
+        scan["Catalyst Score"] * 0.10
+    ).round(1)
+    scan["V35 Trigger"] = scan.apply(v35_trigger_text, axis=1)
+    grade_rank = {"A": 4, "B": 3, "C": 2, "D": 1}
+    scan["Grade Rank"] = scan["Candidate Grade"].map(grade_rank).fillna(0)
+    return scan.sort_values(["Grade Rank", "V35 Score", "Professional Score", "Money Flow Score"], ascending=False).reset_index(drop=True)
+
+
+def v35_candidate_board(scan, limit=12):
+    cols = [
+        "Ticker", "Candidate Grade", "V35 Score", "Professional Verdict", "Signal", "Best Setup",
+        "ORB Status Score", "OR Status", "OR Zone", "Above VWAP", "VWAP", "OR High", "OR Low",
+        "Money Flow Score", "Professional Score", "Composite Score", "RS Score", "Rel Vol",
+        "Price", "Stop", "Target 1", "Shares", "Dollar Risk", "V35 Trigger", "Grade Reason"
+    ]
+    cols = [c for c in cols if c in scan.columns]
+    return scan[cols].head(limit)
+
+
+def v35_robinhood_mirror_text(scan, cash):
+    a = int((scan["Candidate Grade"] == "A").sum()) if "Candidate Grade" in scan.columns else 0
+    b = int((scan["Candidate Grade"] == "B").sum()) if "Candidate Grade" in scan.columns else 0
+    leader = scan.iloc[0]
+    lines = [
+        "ROBINHOOD REAL / ALPACA PAPER MIRROR v35",
+        f"Cash baseline: ${cash:,.2f}",
+        f"A candidates: {a} | B candidates: {b}",
+        f"Top mirror candidate: {leader['Ticker']} / Grade {leader.get('Candidate Grade', 'N/A')} / V35 Score {leader.get('V35 Score', 'N/A')}",
+        "Workflow: enter Robinhood manually only after chart trigger; immediately mirror same symbol/size logic in Alpaca paper when configured.",
+        "Safety: never route Alpaca live unless endpoint and arming phrase explicitly confirm live mode."
+    ]
+    return "\n".join(lines)
 
 # ============================================================
 # PACKETS / SUMMARY
@@ -2455,7 +2575,7 @@ def safe_records(df):
 
 def build_snapshot(scan, market_df, light, regime, score, reason):
     tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
-    candidates = scan[scan["Professional Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])]
+    candidates = scan[(scan["Professional Verdict"].isin(["TRADE CANDIDATE", "WAIT FOR TRIGGER"])) | (scan.get("Candidate Grade", pd.Series(index=scan.index, dtype=str)).isin(["A", "B"]))]
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
 
     return {
@@ -2487,7 +2607,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v34")
+    lines.append("TRADER BRIEFING v35")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -2506,6 +2626,7 @@ def make_trader_briefing(snapshot):
         lines.append(f"Catalyst-adjusted verdict: {candidate['Catalyst-Adjusted Verdict']}")
         lines.append(f"Composite verdict: {candidate['Composite Verdict']}")
         lines.append(f"Professional verdict: {candidate['Professional Verdict']}")
+        lines.append(f"V35 grade: {candidate.get('Candidate Grade', 'N/A')} / score {candidate.get('V35 Score', 'N/A')} / trigger {candidate.get('V35 Trigger', '')}")
         lines.append(f"Signal: {candidate['Signal']}")
         lines.append(f"Tier/setup: {candidate['Tier']} {candidate['Best Setup']}")
         lines.append(f"Pattern: {candidate['Pattern']}")
@@ -2540,7 +2661,7 @@ def make_trader_briefing(snapshot):
         lines.append(f"Relative volume: {candidate['Rel Vol']}")
         lines.append(f"Reason: {candidate['Reason']}")
         lines.append(f"Chart screenshot needed: {candidate['Chart Needed']}")
-        lines.append("Execution: use v31 ladder plan before placing any manual orders.")
+        lines.append("Execution: use v35 ladder plan before placing any manual orders.")
     elif top_trade:
         lines.append("PRIMARY CANDIDATE")
         lines.append(f"Ticker: {top_trade['Ticker']}")
@@ -2576,7 +2697,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v34 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v35 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -2588,7 +2709,7 @@ def make_full_packet(snapshot):
     lines.append("TOP 10 RANKED")
     for i, row in enumerate(snapshot["top_10"], 1):
         lines.append(
-            f"{i}. {row['Ticker']} | {row['Professional Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
+            f"{i}. {row['Ticker']} | Grade {row.get('Candidate Grade', 'N/A')} | {row['Professional Verdict']} | {row['Signal']} | {row['Tier']} {row['Best Setup']} | "
             f"Professional {row['Professional Score']} | Composite {row['Composite Score']} | Total {row['Total Opportunity Score']} | Catalyst {row['Catalyst Score']} | Earnings {row['Earnings Score']} | Premarket {row['Premarket Score']} | Learning {row['Learning Score']} | Sector {row['Sector Rotation Score']} | External {row['External Score']} | Flow {row['Money Flow Score']} | Setup {row['Best Score']} | RS {row['RS Score']} | "
             f"EV {row['EV / Share']} | VWAP {row['Above VWAP']} | OR {row['OR Zone']} | Reason: {row['Reason']}"
         )
@@ -2652,23 +2773,23 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v34")
+st.title("Deon's Trader Dashboard v35")
 
 st.markdown("""
-<div class="v34-hero">
-  <h1>Daily Trader Mode v34</h1>
+<div class="v35-hero">
+  <h1>Daily Trader Mode v35</h1>
   <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
-  <div class="v34-hero-row">
-    <span class="v34-chip">⚡ Daily Setup Engine</span>
-    <span class="v34-chip">🛡️ Risk Locked</span>
-    <span class="v34-chip">📈 Alpaca Ready</span>
-    <span class="v34-chip">🎯 Robinhood Mirror</span>
+  <div class="v35-hero-row">
+    <span class="v35-chip">⚡ Daily Setup Engine</span>
+    <span class="v35-chip">🛡️ Risk Locked</span>
+    <span class="v35-chip">📈 Alpaca Ready</span>
+    <span class="v35-chip">🎯 Robinhood Mirror</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<div class="v34-card-dark">
+<div class="v35-card-dark">
   <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:center;">
     <div style="font-size:1.05rem; font-weight:950;">Trade Desk View</div>
     <div style="opacity:.85;">Use the dashboard to generate candidates, verify the chart, then mirror Robinhood real trade with Alpaca paper.</div>
@@ -2799,6 +2920,7 @@ with st.spinner("Scanning technicals, news, sector rotation, earnings timing, pr
     scan = apply_premarket_activity(scan, premarket_df)
     scan = apply_learning_scores(scan, learning_log)
     scan = add_v31_scores(scan)
+    scan = add_v35_scores(scan)
 
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
@@ -2820,14 +2942,14 @@ manual_news_hits = scan[scan.get("Catalyst Source", "") == "Manual override"] if
 # ============================================================
 
 st.header("Step 1 — Copy This Trader Briefing")
-st.success("This is the main v31 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
+st.success("This is the main v35 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
 st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v34.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v34.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v34.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -2904,7 +3026,7 @@ d.metric("Top Flow Score", top_flow["Money Flow Score"])
 st.subheader("Top 3 Money Flow")
 st.dataframe(
     scan.head(3)[[
-        "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+        "Ticker", "Sector", "Candidate Grade", "V35 Score", "Professional Verdict", "Signal", "Tier", "Best Setup",
         "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Stop",
         "Target 1", "Shares", "Position $", "Dollar Risk", "Chart Needed"
     ]],
@@ -2918,6 +3040,7 @@ st.dataframe(
 tabs = st.tabs([
     "Money Flow Board",
     "Daily Trader",
+    "V35 Candidates",
     "Trade Plan",
     "Full Packet",
     "Sector Flow",
@@ -2930,6 +3053,7 @@ tabs = st.tabs([
     "Learning Log",
     "Execution Engine",
     "Broker Execution",
+    "Robinhood Mirror",
     "Charts",
 ])
 
@@ -2939,7 +3063,7 @@ with tabs[0]:
     ranked.insert(0, "Rank", range(1, len(ranked) + 1))
     st.dataframe(
         ranked[[
-            "Rank", "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+            "Rank", "Ticker", "Sector", "Candidate Grade", "V35 Score", "Professional Verdict", "Signal", "Tier", "Best Setup",
             "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "Reason", "Price", "Probability %",
             "EV / Share", "Position $", "Dollar Risk", "Above VWAP", "OR Zone", "RS Score"
         ]],
@@ -2951,7 +3075,32 @@ with tabs[0]:
     st.subheader("Manual Watchlist")
     st.dataframe(scan[scan["Ticker"].isin(manual)], use_container_width=True, height=320)
 
+with tabs[1]:
+    st.header("Daily Trader")
+    st.write("Frequency-oriented opportunity board using v35 grades, OR/VWAP triggers, and hard risk controls.")
+    daily_board = v34_build_daily_opportunity_board(scan, candidate_goal=candidate_goal, frequency_bias=frequency_bias)
+    if not daily_board.empty:
+        extra_cols = ["Candidate Grade", "V35 Score", "V35 Trigger"]
+        show = daily_board.merge(scan[["Ticker"] + extra_cols], on="Ticker", how="left") if all(c in scan.columns for c in extra_cols) else daily_board
+        st.dataframe(show, use_container_width=True, height=520)
+    else:
+        st.warning("No daily trader candidates generated.")
+    st.caption("Grade A/B names are eligible for real-trade review; C names are watchlist only; D names are ignored.")
+
 with tabs[2]:
+    st.header("V35 Candidate Board")
+    st.write("A = actionable after trigger, B = close candidate, C = watchlist, D = ignore. This fixes the v34 all-or-nothing participation problem.")
+    st.dataframe(v35_candidate_board(scan, candidate_goal), use_container_width=True, height=520)
+    g1, g2, g3, g4 = st.columns(4)
+    g1.metric("Grade A", int((scan["Candidate Grade"] == "A").sum()))
+    g2.metric("Grade B", int((scan["Candidate Grade"] == "B").sum()))
+    g3.metric("Grade C", int((scan["Candidate Grade"] == "C").sum()))
+    g4.metric("Grade D", int((scan["Candidate Grade"] == "D").sum()))
+    st.subheader("Trigger Checklist")
+    for _, r in scan[scan["Candidate Grade"].isin(["A", "B", "C"])].head(8).iterrows():
+        st.write(f"**{r['Ticker']} — Grade {r['Candidate Grade']}**: {r['V35 Trigger']}")
+
+with tabs[3]:
     st.header("Trade Plan")
     selected = st.selectbox("Select opportunity", scan["Ticker"].tolist())
     row = scan[scan["Ticker"] == selected].iloc[0]
@@ -2965,7 +3114,7 @@ with tabs[2]:
 
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Ticker", row["Ticker"])
-    m2.metric("Verdict", row["Composite Verdict"])
+    m2.metric("Grade", row.get("Candidate Grade", "N/A"))
     m3.metric("Setup", row["Best Setup"])
     m4.metric("Tier", row["Tier"])
     m5.metric("Professional", row["Professional Score"])
@@ -2988,12 +3137,12 @@ with tabs[2]:
     st.write(f"Opening Range: **{row['OR Status']} / {row['OR Zone']}**")
     st.write(f"Chart screenshot needed: **{row['Chart Needed']}**")
 
-with tabs[3]:
+with tabs[4]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v34.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v35.json", mime="application/json")
 
-with tabs[4]:
+with tabs[5]:
     st.header("Sector Flow")
     sectors = sector_flow(scan)
     st.dataframe(sectors, use_container_width=True)
@@ -3002,11 +3151,11 @@ with tabs[4]:
         st.subheader(f"Leaders in strongest sector: {leader_sector}")
         st.dataframe(scan[scan["Sector"] == leader_sector].head(5), use_container_width=True)
 
-with tabs[5]:
+with tabs[6]:
     st.header("Engine Scores")
     st.dataframe(
         scan[[
-            "Ticker", "Sector", "Professional Verdict", "Signal", "Tier", "Best Setup",
+            "Ticker", "Sector", "Candidate Grade", "V35 Score", "Professional Verdict", "Signal", "Tier", "Best Setup",
             "Professional Score", "Composite Score", "Earnings Score", "Premarket Score", "Learning Score", "Sector Rotation Score", "Total Opportunity Score", "Catalyst Score", "Catalyst Type", "External Score", "External Source", "Money Flow Score", "Best Score", "ORB Score", "VWAP Score", "Gap Score",
             "Momentum Score", "Daily Score", "RS Score", "EV / Share"
         ]],
@@ -3014,7 +3163,7 @@ with tabs[5]:
         height=560,
     )
 
-with tabs[6]:
+with tabs[7]:
     st.header("No Trade / Watch")
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
     st.dataframe(
@@ -3027,7 +3176,7 @@ with tabs[6]:
         height=500,
     )
 
-with tabs[7]:
+with tabs[8]:
     st.header("Participation Target")
     participation = len(tradeable) / len(scan) * 100 if len(scan) else 0
     x1, x2, x3, x4 = st.columns(4)
@@ -3043,7 +3192,7 @@ with tabs[7]:
     else:
         st.error("Low participation. Conditions are still selective.")
 
-with tabs[8]:
+with tabs[9]:
     st.header("Automated Catalyst Intelligence")
     st.write("Automatic Yahoo Finance news plus manual catalyst entries affect Total Opportunity Score and Catalyst-Adjusted Verdict.")
     st.dataframe(
@@ -3058,9 +3207,9 @@ with tabs[8]:
     st.subheader("How to enter catalysts")
     st.code("CRDO | Raised guidance | Today | earnings beat and raised outlook\nPLTR | Major contract / partnership | Yesterday | defense AI contract\nNVDA | Analyst upgrade | Today | price target raised")
 
-with tabs[9]:
+with tabs[10]:
     st.header("Multi-Source Intelligence")
-    st.write("v31 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
+    st.write("v35 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
     st.dataframe(
         scan[[
             "Ticker", "Composite Verdict", "Composite Score",
@@ -3075,7 +3224,7 @@ with tabs[9]:
     st.subheader("Scoring weights")
     st.write("Professional Score = 45% Composite + 15% Earnings + 15% Premarket + 10% Learning + 15% Sector Rotation. Composite still blends technicals, money flow, news, sector, and external signals.")
 
-with tabs[10]:
+with tabs[11]:
     st.header("Earnings & Premarket Risk")
     st.write("Use this tab to see event risk and premarket participation. Manual inputs come from the sidebar.")
     st.dataframe(
@@ -3089,7 +3238,7 @@ with tabs[10]:
         height=560,
     )
 
-with tabs[11]:
+with tabs[12]:
     st.header("Trade Outcome Learning")
     st.write("Record closed trades here so the dashboard can learn which setup types are actually working for you.")
     learning_log_current = load_learning_log()
@@ -3138,7 +3287,7 @@ with tabs[11]:
             else:
                 st.error("Ticker, entry, exit, and shares are required.")
 
-with tabs[12]:
+with tabs[13]:
     st.header("Trade Execution Engine")
     st.write("This creates a manual ladder plan. It does not connect to Robinhood or place live orders.")
 
@@ -3183,7 +3332,7 @@ with tabs[12]:
     else:
         st.error(plan["reason"])
 
-with tabs[13]:
+with tabs[14]:
     st.header("Broker Execution — Alpaca")
     st.warning("This tab can place orders only if Alpaca keys are configured. Use paper trading first. This is not a promise of income.")
 
@@ -3310,7 +3459,23 @@ with tabs[13]:
             else:
                 st.error(msg)
 
-with tabs[14]:
+
+with tabs[15]:
+    st.header("Robinhood Mirror")
+    st.write("Use this as the real-money checklist. Alpaca remains the paper mirror unless you deliberately configure live trading.")
+    st.text_area("Mirror Plan", v35_robinhood_mirror_text(scan, cash), height=180)
+    st.subheader("Real Trade Candidates")
+    st.dataframe(
+        scan[scan["Candidate Grade"].isin(["A", "B"])][[
+            "Ticker", "Candidate Grade", "V35 Score", "Professional Verdict", "V35 Trigger",
+            "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk", "Best Setup", "Reason"
+        ]],
+        use_container_width=True,
+        height=360,
+    )
+    st.warning("Robinhood trades are manual only. Confirm chart, size, stop, and invalidation before placing any real order.")
+
+with tabs[16]:
     st.header("Charts")
     default_chart = top_candidate["Ticker"] if top_candidate else scan.iloc[0]["Ticker"]
     tickers = scan["Ticker"].tolist()
@@ -3324,4 +3489,4 @@ with tabs[14]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v34 adds a full trade-desk visual refresh using the dark-teal, emerald, and blue theme.")
+st.caption("v35 adds a full trade-desk visual refresh using the dark-teal, emerald, and blue theme.")
