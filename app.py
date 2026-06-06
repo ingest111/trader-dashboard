@@ -10,7 +10,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.1",
+    page_title="Deon's Trader Dashboard v35.2",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1460,9 +1460,9 @@ def catalyst_summary(scan):
 # EARNINGS / PREMARKET / LEARNING ENGINE
 # ============================================================
 
-LEARNING_FILE = "trade_learning_log_v35_1.csv"
-SCAN_HISTORY_FILE = "scan_history_v35_1.csv"
-ROBINHOOD_MIRROR_FILE = "robinhood_mirror_v35_1.csv"
+LEARNING_FILE = "trade_learning_log_v35_2.csv"
+SCAN_HISTORY_FILE = "scan_history_v35_2.csv"
+ROBINHOOD_MIRROR_FILE = "robinhood_mirror_v35_2.csv"
 
 def parse_earnings_text(text):
     """
@@ -2692,6 +2692,208 @@ def append_csv_row(path, row):
     out.to_csv(path, index=False)
     return out
 
+
+# ============================================================
+# V35.2 DAILY PROFIT / TRADE PERMISSION ENGINE
+# ============================================================
+
+def monthly_target_math(month_start_equity, current_equity, monthly_target_pct, trading_days_left, base_risk_pct):
+    start = max(float(month_start_equity or 0), 0.01)
+    current = max(float(current_equity or start), 0.01)
+    target_pct = max(float(monthly_target_pct or 0), 0.0)
+    days_left = max(int(trading_days_left or 1), 1)
+    risk_pct_local = max(float(base_risk_pct or 0), 0.0001)
+
+    target_profit = start * (target_pct / 100.0)
+    target_equity = start + target_profit
+    pnl = current - start
+    pnl_pct = (pnl / start) * 100.0
+    remaining_profit = max(0.0, target_equity - current)
+    needed_per_day = remaining_profit / days_left
+    needed_daily_pct = (needed_per_day / current) * 100.0 if current > 0 else 0.0
+    full_r_dollars = current * risk_pct_local
+    current_r = pnl / full_r_dollars if full_r_dollars > 0 else 0.0
+    required_r_remaining = remaining_profit / full_r_dollars if full_r_dollars > 0 else 0.0
+
+    if pnl >= target_profit:
+        status = "Ahead of monthly target"
+    elif pnl_pct >= target_pct * 0.50:
+        status = "On pace but still needs selectivity"
+    elif needed_daily_pct <= 1.0:
+        status = "Recoverable with normal discipline"
+    elif needed_daily_pct <= 2.0:
+        status = "Behind pace; do not increase risk"
+    else:
+        status = "Target pressure high; protect capital first"
+
+    return {
+        "Month Start Equity": round(start, 2),
+        "Current Equity": round(current, 2),
+        "Target Equity": round(target_equity, 2),
+        "Monthly Target %": round(target_pct, 2),
+        "Monthly P/L": round(pnl, 2),
+        "Monthly P/L %": round(pnl_pct, 2),
+        "Remaining Target $": round(remaining_profit, 2),
+        "Trading Days Left": days_left,
+        "Needed $ / Day": round(needed_per_day, 2),
+        "Needed Daily %": round(needed_daily_pct, 2),
+        "Full R $": round(full_r_dollars, 2),
+        "Current Month R": round(current_r, 2),
+        "Required R Remaining": round(required_r_remaining, 2),
+        "Monthly Status": status,
+    }
+
+
+def v352_daily_mode(scan, market_light, daily_pnl, daily_trades_taken, max_daily_loss, max_real_trades, month_math):
+    if scan is None or scan.empty:
+        return "PROTECT", "No scan data available."
+
+    best = scan.iloc[0]
+    grade = str(best.get("Candidate Grade", "D"))
+    above_vwap = bool(best.get("Above VWAP", False))
+    or_status = str(best.get("OR Status", ""))
+    score = safe_num(best.get("V35.1 Score", best.get("V35 Score", 0)))
+    prof = safe_num(best.get("Professional Score", 0))
+    rr = safe_num(best.get("Reward/Risk", 0))
+    pnl = float(daily_pnl or 0)
+    trades = int(daily_trades_taken or 0)
+    max_loss = abs(float(max_daily_loss or 0))
+    max_trades = max(int(max_real_trades or 1), 1)
+    monthly_status = str(month_math.get("Monthly Status", ""))
+
+    if max_loss > 0 and pnl <= -max_loss:
+        return "PROTECT", f"Daily loss limit reached (${pnl:.2f} <= -${max_loss:.2f})."
+    if trades >= max_trades:
+        return "PROTECT", f"Real-trade count limit reached ({trades}/{max_trades})."
+    if "pressure high" in monthly_status.lower():
+        return "PROTECT", "Monthly target pressure is too high; do not solve it with larger intraday risk."
+    if grade == "A" and market_light in ["GREEN", "YELLOW"] and above_vwap and or_status != "Below OR Low" and score >= 68 and rr >= 1.2:
+        return "ATTACK", "Best candidate has A-grade structure, VWAP support, and acceptable reward/risk."
+    if grade in ["A", "B"] and or_status != "Below OR Low" and prof >= 58:
+        return "PROBE", "A/B candidate exists, but confirmation or tape quality is not strong enough for full risk."
+    if grade in ["B", "C"] or score >= 50:
+        return "TRAIN", "There is something to study or paper-test, but real-money edge is not clean enough."
+    return "PROTECT", "No qualified setup; observation protects the monthly target."
+
+
+def v352_permission_for_row(row, daily_mode_value, current_equity, risk_pct_base, max_order_value, max_total_risk):
+    grade = str(row.get("Candidate Grade", "D"))
+    score = safe_num(row.get("V35.1 Score", row.get("V35 Score", 0)))
+    above_vwap = bool(row.get("Above VWAP", False))
+    or_status = str(row.get("OR Status", ""))
+    rr = safe_num(row.get("Reward/Risk", 0))
+    ev = safe_num(row.get("EV / Share", 0))
+    shares = safe_num(row.get("Shares", 0))
+    dollar_risk = safe_num(row.get("Dollar Risk", 0))
+    prof = safe_num(row.get("Professional Score", 0))
+    mf = safe_num(row.get("Money Flow Score", 0))
+
+    reasons = []
+    real = False
+    paper = False
+    allowed_r_mult = 0.0
+
+    if daily_mode_value == "PROTECT":
+        reasons.append("daily mode blocks new real exposure")
+    if grade not in ["A", "B"]:
+        reasons.append(f"grade {grade} is not real-trade grade")
+    if or_status == "Below OR Low":
+        reasons.append("below opening-range low")
+    if not above_vwap:
+        reasons.append("not holding VWAP")
+    if rr < 1.2:
+        reasons.append(f"reward/risk below 1.20 ({rr:.2f})")
+    if ev < -0.05:
+        reasons.append(f"EV/share below floor ({ev:.2f})")
+    if shares <= 0 or dollar_risk <= 0:
+        reasons.append("no executable share/risk plan")
+    if prof < 55:
+        reasons.append(f"professional score too low ({prof:.1f})")
+    if mf < 50:
+        reasons.append(f"money flow too weak ({mf:.0f})")
+
+    if daily_mode_value == "ATTACK" and grade == "A" and not reasons:
+        real = True
+        allowed_r_mult = 1.00
+    elif daily_mode_value in ["ATTACK", "PROBE"] and grade in ["A", "B"] and or_status != "Below OR Low" and rr >= 1.2 and shares > 0 and dollar_risk > 0:
+        real = True
+        allowed_r_mult = 0.50 if grade == "B" or daily_mode_value == "PROBE" else 0.75
+
+    if grade in ["A", "B", "C"] and daily_mode_value != "PROTECT":
+        paper = True
+    if daily_mode_value == "TRAIN" and grade in ["B", "C"]:
+        paper = True
+
+    raw_allowed = float(current_equity or 0) * float(risk_pct_base or 0) * allowed_r_mult
+    allowed_risk = min(raw_allowed, float(max_total_risk or raw_allowed or 0))
+    if safe_num(row.get("Position $", 0)) > float(max_order_value or 10**9):
+        real = False
+        reasons.append("planned position exceeds order-value cap")
+
+    permission = "REAL OK" if real else ("PAPER ONLY" if paper else "BLOCKED")
+    if real and allowed_r_mult < 1:
+        permission = "REAL REDUCED"
+    if not reasons and real:
+        reason_text = "real trade may be reviewed after live chart trigger confirms"
+    elif not reasons and paper:
+        reason_text = "paper test allowed; real entry still needs higher grade or confirmation"
+    else:
+        reason_text = "; ".join(reasons[:5])
+
+    return pd.Series({
+        "V35.2 Permission": permission,
+        "V35.2 Permission Reason": reason_text,
+        "Allowed R Mult": round(allowed_r_mult, 2),
+        "Allowed Risk $": round(max(0.0, allowed_risk), 2),
+    })
+
+
+def add_v352_profit_engine(scan, daily_mode_value, current_equity, risk_pct_base, max_order_value, max_total_risk):
+    scan = scan.copy()
+    perms = scan.apply(
+        lambda r: v352_permission_for_row(r, daily_mode_value, current_equity, risk_pct_base, max_order_value, max_total_risk),
+        axis=1,
+    )
+    scan = pd.concat([scan, perms], axis=1)
+    scan["V35.2 Priority Score"] = (
+        safe_num(1) * 0 +
+        scan["V35.1 Score"] * 0.40 +
+        scan["Professional Score"] * 0.20 +
+        scan["Money Flow Score"] * 0.15 +
+        scan["RS Score"] * 0.10 +
+        scan["ORB Status Score"] * 0.10 +
+        scan["VWAP Confirm Score"] * 0.05
+    ).round(1)
+    perm_rank = {"REAL OK": 4, "REAL REDUCED": 3, "PAPER ONLY": 2, "BLOCKED": 1}
+    scan["V35.2 Rank"] = scan["V35.2 Permission"].map(perm_rank).fillna(0) * 1000 + scan["V35.2 Priority Score"]
+    return scan.sort_values(["V35.2 Rank", "V35.1 Score", "Professional Score"], ascending=False).reset_index(drop=True)
+
+
+def v352_operating_brief(scan, daily_mode_value, daily_mode_reason, month_math, daily_pnl, daily_trades_taken, max_daily_loss, max_real_trades):
+    lines = []
+    lines.append("V35.2 DAILY PROFIT ENGINE")
+    lines.append(f"Mode: {daily_mode_value} — {daily_mode_reason}")
+    lines.append(f"Monthly: {month_math['Monthly P/L']} ({month_math['Monthly P/L %']}%) toward {month_math['Monthly Target %']}% target; remaining ${month_math['Remaining Target $']} with {month_math['Trading Days Left']} trading days left.")
+    lines.append(f"Needed pace: ${month_math['Needed $ / Day']}/day or {month_math['Needed Daily %']}%/day; required remaining R: {month_math['Required R Remaining']}R.")
+    lines.append(f"Today: P/L ${float(daily_pnl or 0):.2f}; real trades {int(daily_trades_taken or 0)}/{int(max_real_trades or 1)}; daily loss stop ${abs(float(max_daily_loss or 0)):.2f}.")
+
+    real = scan[scan["V35.2 Permission"].isin(["REAL OK", "REAL REDUCED"])] if "V35.2 Permission" in scan.columns else pd.DataFrame()
+    paper = scan[scan["V35.2 Permission"].eq("PAPER ONLY")] if "V35.2 Permission" in scan.columns else pd.DataFrame()
+
+    if not real.empty:
+        top = real.iloc[0]
+        lines.append(f"Primary real-money review: {top['Ticker']} / {top['V35.2 Permission']} / Grade {top['Candidate Grade']} / risk cap ${top['Allowed Risk $']}.")
+        lines.append(f"Required trigger: {top.get('Action Plan', '')}")
+    elif not paper.empty:
+        top = paper.iloc[0]
+        lines.append(f"No real-money candidate. Paper focus: {top['Ticker']} / Grade {top['Candidate Grade']} / reason: {top['V35.2 Permission Reason']}.")
+    else:
+        top = scan.iloc[0]
+        lines.append(f"No trade deployment. Top blocked symbol: {top['Ticker']} / {top.get('V35.2 Permission Reason', top.get('Rejection Reason', ''))}.")
+
+    lines.append("Rule stack: real money requires permission + live trigger + manual Robinhood confirmation; Alpaca is for mirrors or training, not for bypassing the block.")
+    return "\n".join(lines)
+
 # ============================================================
 # PACKETS / SUMMARY
 # ============================================================
@@ -2927,7 +3129,7 @@ st.title("Deon's Trader Dashboard v35.1")
 
 st.markdown("""
 <div class="v35-hero">
-  <h1>Daily Trader Mode v35.1</h1>
+  <h1>Daily Trader Mode v35.2.1</h1>
   <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
   <div class="v35-hero-row">
     <span class="v35-chip">⚡ Daily Setup Engine</span>
@@ -3001,6 +3203,17 @@ with st.sidebar.expander("Premarket examples"):
 cash = st.sidebar.number_input("Cash available", min_value=0.0, value=855.0, step=25.0)
 risk_pct = st.sidebar.number_input("Base risk per trade %", min_value=0.25, max_value=10.0, value=3.0, step=0.25) / 100
 
+st.sidebar.subheader("V35.2 Profit Engine")
+month_start_equity = st.sidebar.number_input("Month start equity", min_value=0.01, value=float(cash), step=25.0)
+current_real_equity = st.sidebar.number_input("Current Robinhood equity", min_value=0.01, value=float(cash), step=25.0)
+monthly_target_pct = st.sidebar.number_input("Monthly target %", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+trading_days_left = st.sidebar.number_input("Trading days left this month", min_value=1, max_value=23, value=20, step=1)
+daily_pnl_input = st.sidebar.number_input("Today's realized P/L", value=0.0, step=5.0)
+daily_trades_taken = st.sidebar.number_input("Real trades taken today", min_value=0, max_value=20, value=0, step=1)
+max_real_trades_per_day = st.sidebar.number_input("Max real trades/day", min_value=1, max_value=10, value=2, step=1)
+max_daily_loss_dollars = st.sidebar.number_input("Max daily real loss $", min_value=0.0, value=max(10.0, float(cash) * risk_pct), step=5.0)
+st.sidebar.caption("This layer decides ATTACK / PROBE / TRAIN / PROTECT before any Robinhood action.")
+
 st.sidebar.write("A+ max risk:", f"${cash * risk_pct:,.2f}")
 st.sidebar.write("A max risk:", f"${cash * risk_pct * 0.75:,.2f}")
 st.sidebar.write("B max risk:", f"${cash * risk_pct * 0.50:,.2f}")
@@ -3073,6 +3286,11 @@ with st.spinner("Scanning technicals, news, sector rotation, earnings timing, pr
     scan = add_v35_scores(scan)
     scan = add_v351_decision_audit(scan)
 
+month_math = monthly_target_math(month_start_equity, current_real_equity, monthly_target_pct, trading_days_left, risk_pct)
+daily_mode_value, daily_mode_reason = v352_daily_mode(scan, light, daily_pnl_input, daily_trades_taken, max_daily_loss_dollars, max_real_trades_per_day, month_math)
+scan = add_v352_profit_engine(scan, daily_mode_value, current_real_equity, risk_pct, broker_max_order_value, broker_max_total_risk)
+v352_brief = v352_operating_brief(scan, daily_mode_value, daily_mode_reason, month_math, daily_pnl_input, daily_trades_taken, max_daily_loss_dollars, max_real_trades_per_day)
+
 if scan.empty:
     st.error("No data loaded. Try fewer tickers, wait one minute, then refresh.")
     st.stop()
@@ -3098,9 +3316,25 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_1.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_1.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_1.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_2.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_2.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_2.csv", mime="text/csv")
+
+st.header("V35.2 — Daily Profit Engine")
+mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
+mode_col1.metric("Mode", daily_mode_value)
+mode_col2.metric("Monthly P/L", f"${month_math['Monthly P/L']:,.2f}", f"{month_math['Monthly P/L %']}%")
+mode_col3.metric("Needed / Day", f"${month_math['Needed $ / Day']:,.2f}", f"{month_math['Needed Daily %']}%")
+mode_col4.metric("Required R Left", f"{month_math['Required R Remaining']}R")
+if daily_mode_value == "ATTACK":
+    st.success(daily_mode_reason)
+elif daily_mode_value == "PROBE":
+    st.warning(daily_mode_reason)
+elif daily_mode_value == "TRAIN":
+    st.info(daily_mode_reason)
+else:
+    st.error(daily_mode_reason)
+st.text_area("V35.2 Operating Brief", v352_brief, height=220)
 
 st.header("V35.1 — Today's Action Plan")
 action_plan_text = v351_today_action_plan(scan, light, market_score, market_reason)
@@ -3216,6 +3450,7 @@ tabs = st.tabs([
     "V35.1 Action Plan",
     "Rejection Audit",
     "Scan History",
+    "V35.2 Profit Engine",
 ])
 
 with tabs[0]:
@@ -3719,7 +3954,30 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_1.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_2.csv", mime="text/csv")
 
 
-st.caption("v35.1 adds decision audit, persistent scan history, rejection reasons, and a stronger Robinhood/Alpaca mirror workflow.")
+
+with tabs[20]:
+    st.header("V35.2 Profit Engine")
+    st.text_area("Daily Operating Brief", v352_brief, height=260)
+    st.subheader("Monthly Pace")
+    st.dataframe(pd.DataFrame([month_math]), use_container_width=True)
+    st.subheader("Trade Permission Queue")
+    permission_cols = [
+        "Ticker", "V35.2 Permission", "V35.2 Permission Reason", "Allowed Risk $", "Allowed R Mult",
+        "Candidate Grade", "V35.2 Priority Score", "V35.1 Score", "Professional Score", "Money Flow Score",
+        "Best Setup", "Action Plan", "Price", "Stop", "Target 1", "Shares", "Dollar Risk",
+        "Above VWAP", "OR Status", "OR Zone", "Reward/Risk", "EV / Share"
+    ]
+    permission_cols = [c for c in permission_cols if c in scan.columns]
+    st.dataframe(scan[permission_cols], use_container_width=True, height=560)
+    st.subheader("Daily Controls")
+    st.write(f"Mode: **{daily_mode_value}**")
+    st.write(f"Reason: {daily_mode_reason}")
+    st.write(f"Real trades today: {int(daily_trades_taken)} / {int(max_real_trades_per_day)}")
+    st.write(f"Daily realized P/L: ${float(daily_pnl_input):,.2f}")
+    st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
+    st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
+
+st.caption("v35.2 adds a daily profit engine, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
