@@ -12,7 +12,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.3 Deep UI",
+    page_title="Deon's Trader Dashboard v35.4 Warm UI",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -606,6 +606,265 @@ div[data-testid="stAlert"] {
 [data-testid="stExpander"] { border-radius: 18px !important; border: 1px solid rgba(15,118,110,.16) !important; box-shadow: 0 10px 28px rgba(6,22,34,.045); overflow:hidden; }
 [data-testid="stExpander"] summary { font-weight:950 !important; color:#083344 !important; }
 @media (max-width: 1100px) { .v35-command-strip, .v35-lane-grid, .v35-tile-grid { grid-template-columns: 1fr; } }
+
+
+
+/* ============================================================
+   V35.4 WARM OPPORTUNITY PALETTE
+   Navy/teal/emerald foundation + gold/copper premium accents.
+   Gold = best opportunity / target progress. Copper = pending action.
+   ============================================================ */
+:root {
+    --v35-gold: #D4AF37;
+    --v35-gold-deep: #B8860B;
+    --v35-gold-soft: #FFF7D6;
+    --v35-copper: #C97A40;
+    --v35-copper-deep: #9A4F22;
+    --v35-copper-soft: #FFF1E6;
+    --v35-champagne: #D8C3A5;
+    --v35-warm-cream: #fffaf0;
+    --v35-bronze: #CD7F32;
+    --v35-silver: #B8C2CC;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at 88% 4%, rgba(212,175,55,.13), transparent 29%),
+        radial-gradient(circle at 4% 10%, rgba(201,122,64,.10), transparent 24%),
+        radial-gradient(circle at top right, rgba(37, 99, 235, .10), transparent 34%),
+        radial-gradient(circle at top left, rgba(16, 185, 129, .075), transparent 28%),
+        linear-gradient(180deg, #fffaf0 0%, #f8fafc 36%, #eef6f7 100%) !important;
+}
+
+section[data-testid="stSidebar"] {
+    background:
+        radial-gradient(circle at 12% 2%, rgba(212,175,55,.22), transparent 25%),
+        linear-gradient(180deg, #061622 0%, #083344 45%, #0f766e 100%) !important;
+    box-shadow: inset -1px 0 0 rgba(212,175,55,.16);
+}
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong {
+    color: #FFF7D6 !important;
+}
+section[data-testid="stSidebar"] button {
+    background: linear-gradient(135deg, rgba(212,175,55,.20), rgba(255,255,255,.08)) !important;
+    border-color: rgba(212,175,55,.32) !important;
+}
+section[data-testid="stSidebar"] button:hover {
+    background: linear-gradient(135deg, rgba(212,175,55,.34), rgba(201,122,64,.24)) !important;
+}
+
+.v35-hero {
+    background:
+        radial-gradient(circle at 78% 18%, rgba(212,175,55,.26), transparent 30%),
+        radial-gradient(circle at 16% 12%, rgba(56,189,248,.16), transparent 28%),
+        linear-gradient(120deg, #061622 0%, #083344 32%, #0f766e 66%, #B8860B 118%) !important;
+    border: 1px solid rgba(212,175,55,.28) !important;
+    box-shadow: 0 34px 70px rgba(6,22,34,.28), 0 0 0 1px rgba(212,175,55,.10) inset !important;
+}
+.v35-hero:after {
+    background: radial-gradient(circle, rgba(212,175,55,.25), transparent 62%) !important;
+}
+.v35-kicker {
+    color: #FFF7D6 !important;
+    text-shadow: 0 0 24px rgba(212,175,55,.22);
+}
+.v35-chip {
+    background: rgba(255,247,214,.13) !important;
+    border-color: rgba(212,175,55,.28) !important;
+}
+.v35-chip:first-child {
+    background: linear-gradient(135deg, rgba(212,175,55,.28), rgba(255,255,255,.10)) !important;
+    border-color: rgba(212,175,55,.45) !important;
+}
+
+/* Warm premium metric cards */
+div[data-testid="stMetric"] {
+    background:
+        radial-gradient(circle at 92% 8%, rgba(212,175,55,.12), transparent 34%),
+        linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,250,240,.96)) !important;
+    border-color: rgba(201,122,64,.20) !important;
+}
+div[data-testid="stMetric"]::before {
+    background: linear-gradient(90deg, #061622, #0f766e, #D4AF37) !important;
+}
+
+/* Command panels */
+.v35-command-panel {
+    background:
+        radial-gradient(circle at 92% 10%, rgba(212,175,55,.12), transparent 30%),
+        linear-gradient(180deg, rgba(255,255,255,.97), rgba(255,250,240,.94)) !important;
+    border-color: rgba(201,122,64,.18) !important;
+}
+.v35-command-panel.dark {
+    background:
+        radial-gradient(circle at 90% 10%, rgba(212,175,55,.30), transparent 30%),
+        linear-gradient(135deg, #061622 0%, #083344 48%, #0f766e 82%, #B8860B 130%) !important;
+    border-color: rgba(212,175,55,.30) !important;
+}
+.v35-command-panel.gold {
+    background:
+        radial-gradient(circle at 86% 8%, rgba(255,247,214,.52), transparent 32%),
+        linear-gradient(135deg, #FFF7D6 0%, #ffffff 58%, #f8fafc 100%) !important;
+    border-color: rgba(212,175,55,.45) !important;
+    box-shadow: 0 22px 50px rgba(184,134,11,.13) !important;
+}
+.v35-command-panel.copper {
+    background:
+        radial-gradient(circle at 86% 8%, rgba(255,241,230,.58), transparent 32%),
+        linear-gradient(135deg, #FFF1E6 0%, #ffffff 60%, #f8fafc 100%) !important;
+    border-color: rgba(201,122,64,.36) !important;
+}
+.v35-command-panel.gold .v35-command-label,
+.v35-command-panel.gold .v35-command-main { color:#7A5200 !important; }
+.v35-command-panel.copper .v35-command-label,
+.v35-command-panel.copper .v35-command-main { color:#8A421C !important; }
+
+/* Daily mode cards get semantic warmth */
+.v35-mode-ATTACK {
+    border-color: rgba(16,185,129,.46) !important;
+    background: radial-gradient(circle at 88% 10%, rgba(212,175,55,.13), transparent 31%), linear-gradient(160deg, #ecfdf5 0%, #ffffff 60%, #fff7d6 100%) !important;
+}
+.v35-mode-PROBE {
+    border-color: rgba(201,122,64,.46) !important;
+    background: radial-gradient(circle at 88% 10%, rgba(201,122,64,.18), transparent 31%), linear-gradient(160deg, #fff1e6 0%, #ffffff 62%, #e0f2fe 100%) !important;
+}
+.v35-mode-TRAIN {
+    border-color: rgba(37,99,235,.34) !important;
+    background: linear-gradient(160deg, #eff6ff 0%, #ffffff 62%, #fef3c7 100%) !important;
+}
+.v35-mode-PROTECT {
+    border-color: rgba(239,68,68,.40) !important;
+    background: linear-gradient(160deg, #fef2f2 0%, #ffffff 62%, #e2e8f0 100%) !important;
+}
+
+/* Warm status cards and banners */
+.v35-status-card {
+    background:
+        radial-gradient(circle at 92% 8%, rgba(212,175,55,.10), transparent 34%),
+        linear-gradient(180deg, rgba(255,255,255,.97), rgba(255,250,240,.94)) !important;
+    border-color: rgba(201,122,64,.18) !important;
+}
+.v35-status-card:before {
+    background: linear-gradient(90deg, #061622, #0f766e, #D4AF37) !important;
+}
+.v35-banner {
+    background:
+        radial-gradient(circle at 90% 12%, rgba(212,175,55,.24), transparent 30%),
+        linear-gradient(135deg, #061622 0%, #083344 42%, #0f766e 76%, #B8860B 125%) !important;
+    border-color: rgba(212,175,55,.26) !important;
+}
+.v35-banner-title { color:#FFF7D6 !important; }
+
+/* 3-lane workflow: gold, copper, emerald */
+.v35-lane-card:nth-child(1):before { background: linear-gradient(180deg, #B8860B, #D4AF37) !important; }
+.v35-lane-card:nth-child(2):before { background: linear-gradient(180deg, #9A4F22, #C97A40) !important; }
+.v35-lane-card:nth-child(3):before { background: linear-gradient(180deg, #047857, #10B981) !important; }
+.v35-lane-card:nth-child(1) .v35-lane-title { color:#8A6500 !important; }
+.v35-lane-card:nth-child(2) .v35-lane-title { color:#9A4F22 !important; }
+.v35-lane-card:nth-child(3) .v35-lane-title { color:#047857 !important; }
+
+/* Opportunity podium cards */
+.v35-opportunity-tile {
+    background:
+        radial-gradient(circle at 88% 6%, rgba(212,175,55,.11), transparent 33%),
+        linear-gradient(180deg, rgba(255,255,255,.99), rgba(255,250,240,.96)) !important;
+    border-color: rgba(201,122,64,.18) !important;
+}
+.v35-opportunity-tile.rank-1 {
+    border-color: rgba(212,175,55,.55) !important;
+    box-shadow: 0 24px 60px rgba(184,134,11,.18), 0 0 0 1px rgba(212,175,55,.18) inset !important;
+}
+.v35-opportunity-tile.rank-1:before {
+    content:"TOP OPPORTUNITY";
+    position:absolute;
+    right:15px;
+    top:15px;
+    padding:6px 9px;
+    border-radius:999px;
+    color:#5F4100;
+    background: linear-gradient(135deg, #FFF7D6, #D4AF37);
+    border:1px solid rgba(184,134,11,.28);
+    font-size:.66rem;
+    letter-spacing:.08em;
+    font-weight:950;
+    z-index:2;
+}
+.v35-opportunity-tile.rank-2 {
+    border-color: rgba(184,194,204,.55) !important;
+}
+.v35-opportunity-tile.rank-3 {
+    border-color: rgba(205,127,50,.46) !important;
+}
+.v35-tile-rank {
+    background: linear-gradient(135deg, #061622, #0f766e) !important;
+}
+.v35-opportunity-tile.rank-1 .v35-tile-rank {
+    background: linear-gradient(135deg, #7A5200, #D4AF37) !important;
+    color:#061622 !important;
+    box-shadow: 0 10px 24px rgba(212,175,55,.28);
+}
+.v35-opportunity-tile.rank-2 .v35-tile-rank { background: linear-gradient(135deg, #475569, #B8C2CC) !important; }
+.v35-opportunity-tile.rank-3 .v35-tile-rank { background: linear-gradient(135deg, #7C3F16, #CD7F32) !important; }
+.v35-mini-pill.warn {
+    background:#FFF1E6 !important;
+    color:#8A421C !important;
+    border-color: rgba(201,122,64,.25) !important;
+}
+.v35-mini-pill.ok {
+    background:#dcfce7 !important;
+    color:#166534 !important;
+    border-color: rgba(16,185,129,.25) !important;
+}
+.v35-mini-pill.gold {
+    background:#FFF7D6 !important;
+    color:#7A5200 !important;
+    border-color: rgba(212,175,55,.32) !important;
+}
+.v35-tile-trigger {
+    background: linear-gradient(180deg, #fffaf0, #fff1e6) !important;
+    border-color: rgba(201,122,64,.17) !important;
+}
+
+/* Section dividers and buttons */
+.v35-divider-title:before {
+    background: linear-gradient(90deg, #061622, #0f766e, #D4AF37) !important;
+}
+.v35-divider-title:after {
+    background: linear-gradient(90deg, rgba(212,175,55,.42), rgba(15,118,110,.22), transparent) !important;
+}
+.stButton button:hover, .stDownloadButton button:hover {
+    background: linear-gradient(90deg, #083344, #0f766e, #C97A40, #D4AF37) !important;
+    color:white !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #083344, #0f766e, #C97A40) !important;
+    box-shadow: 0 10px 24px rgba(201,122,64,.18) !important;
+}
+
+/* Warm packet/text area focus */
+textarea:focus,
+input:focus {
+    border-color: rgba(212,175,55,.55) !important;
+    box-shadow: 0 0 0 3px rgba(212,175,55,.13) !important;
+}
+
+/* Monthly target emphasis */
+.v35-target-gold {
+    border-radius: 24px;
+    padding: 18px 20px;
+    background: radial-gradient(circle at 90% 8%, rgba(212,175,55,.30), transparent 30%), linear-gradient(135deg, #061622 0%, #083344 48%, #7A5200 128%);
+    color: white;
+    border: 1px solid rgba(212,175,55,.28);
+    box-shadow: 0 24px 60px rgba(6,22,34,.18);
+    margin: 12px 0 18px;
+}
+.v35-target-gold .label { color: rgba(255,247,214,.80); font-weight:950; text-transform:uppercase; letter-spacing:.08em; font-size:.72rem; }
+.v35-target-gold .main { color: #FFF7D6; font-weight:950; font-size:1.65rem; letter-spacing:-.045em; margin-top:6px; }
+.v35-target-gold .sub { color: rgba(255,255,255,.82); font-weight:750; margin-top:8px; }
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -1795,7 +2054,7 @@ def catalyst_summary(scan):
 # ============================================================
 
 LEARNING_FILE = "trade_learning_log_v35_2.csv"
-SCAN_HISTORY_FILE = "scan_history_v35_3.csv"
+SCAN_HISTORY_FILE = "scan_history_v35_4.csv"
 ROBINHOOD_MIRROR_FILE = "robinhood_mirror_v35_2.csv"
 
 def parse_earnings_text(text):
@@ -3260,7 +3519,7 @@ def opportunity_discovery_brief(discovery_df, expanded_symbols, manual_symbols, 
     top = discovery_df.iloc[0]
     added = [s for s in expanded_symbols if s not in set(manual_symbols)]
     lines = []
-    lines.append("OPPORTUNITY DISCOVERY ENGINE v35.3")
+    lines.append("OPPORTUNITY DISCOVERY ENGINE v35.4")
     lines.append(f"Top discovery: {top['Ticker']} / {top['Discovery Tier']} / score {top['Discovery Score']} / {top['Discovery Reason']}.")
     lines.append(f"Prime names: {len(prime)} | Active names above threshold: {len(active)} | Added to scan: {len(added)}.")
     lines.append(f"Added tickers: {', '.join(added[:20]) if added else 'None; manual universe only.'}")
@@ -3736,14 +3995,14 @@ def render_v353_opportunity_tiles(scan_df):
         shares = ui_escape(row.get("Shares", ""))
         pill = permission_pill_class(permission)
         rows.append(f"""
-        <div class="v35-opportunity-tile">
+        <div class="v35-opportunity-tile rank-{rank}">
           <div class="v35-tile-rank">#{rank}</div>
           <div class="v35-tile-ticker">{ticker}</div>
           <div class="v35-tile-meta">{sector} · {setup}</div>
           <div class="v35-tile-row">
             <span class="v35-mini-pill {pill}">{permission}</span>
             <span class="v35-mini-pill">Grade {grade}</span>
-            <span class="v35-mini-pill">Score {score}</span>
+            <span class="v35-mini-pill gold">Score {score}</span>
             <span class="v35-mini-pill">Risk ${risk}</span>
             <span class="v35-mini-pill">Shares {shares}</span>
           </div>
@@ -3774,12 +4033,12 @@ def render_v353_command_strip(daily_mode_value, month_math, scan_df, opportunity
         <div class="v35-command-main">{ui_escape(daily_mode_value)} · {ui_escape(best_ticker)}</div>
         <div class="v35-command-note">{ui_escape(best_permission)} — {ui_escape(best_action)}</div>
       </div>
-      <div class="v35-command-panel">
+      <div class="v35-command-panel gold">
         <div class="v35-command-label">20% Target Lens</div>
         <div class="v35-command-main">{ui_escape(month_math.get('Monthly Status',''))}</div>
         <div class="v35-command-note">Needed/day ${ui_escape(month_math.get('Needed $ / Day',''))} · remaining target ${ui_escape(month_math.get('Remaining Target $',''))}</div>
       </div>
-      <div class="v35-command-panel">
+      <div class="v35-command-panel copper">
         <div class="v35-command-label">Discovery Breadth</div>
         <div class="v35-command-main">{discovery_count} names ranked</div>
         <div class="v35-command-note">The wide net feeds candidates into the same v35.2 real-money gate.</div>
@@ -3791,13 +4050,13 @@ def render_v353_command_strip(daily_mode_value, month_math, scan_df, opportunity
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v35.3 — Opportunity Command UI")
+st.title("Deon's Trader Dashboard v35.4 — Warm Opportunity Command UI")
 
 st.markdown("""
 <div class="v35-hero v35-hero-boost">
-  <div class="v35-kicker">LIVE TRADE DESK · CENTRAL TIME · V35.3</div>
+  <div class="v35-kicker">LIVE TRADE DESK · CENTRAL TIME · V35.4</div>
   <h1>Opportunity Discovery Command Center</h1>
-  <p>Broader discovery universe → v35.2 permission engine → Robinhood real-trade review → Alpaca paper mirror. The colors now carry through the full workflow so status, risk, and opportunity are visible at a glance.</p>
+  <p>Broader discovery universe → v35.2 permission engine → Robinhood real-trade review → Alpaca paper mirror. The warmer color system separates opportunity, action, permission, and risk: gold marks top opportunity, copper marks pending action, emerald marks confirmed permission, and navy keeps the command-center structure grounded.</p>
   <div class="v35-hero-row">
     <span class="v35-chip">⚡ Discovery Engine</span>
     <span class="v35-chip">🧭 Daily Profit Mode</span>
@@ -3811,6 +4070,7 @@ st.markdown("""
 st.caption(f"Last updated CT: {ct_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
+st.sidebar.markdown("**Warm color legend:** Gold = opportunity, Copper = pending action, Emerald = confirmed permission, Red = blocked risk.")
 watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST), height=90)
 scan_text = st.sidebar.text_area("Scanner Universe", ",".join(DEFAULT_SCAN), height=170)
 
@@ -4039,12 +4299,20 @@ st.markdown(f"""
 </div>
 <div class="v35-banner">
   <div class="v35-banner-title">Color System Upgrade</div>
-  <div class="v35-banner-text">Dark navy marks control and risk. Teal marks qualified opportunity. Emerald marks permission or improvement. Blue marks discovery and data. Red/yellow system alerts still override everything when protection is required.</div>
+  <div class="v35-banner-text">Dark navy remains the command structure. Teal marks information, emerald marks confirmation, gold marks the highest opportunity or target progress, copper marks pending action, and red remains reserved for risk blocks.</div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="v35-divider-title">Decision cockpit</div>', unsafe_allow_html=True)
 st.markdown(render_v353_command_strip(daily_mode_value, month_math, scan, opportunity_df), unsafe_allow_html=True)
+
+st.markdown(f'''
+<div class="v35-target-gold">
+  <div class="label">20% Monthly Target Mode</div>
+  <div class="main">{month_math['Monthly Status']} · {month_math['Monthly P/L %']}% month-to-date</div>
+  <div class="sub">Remaining target ${month_math['Remaining Target $']:,.2f} · Needed/day ${month_math['Needed $ / Day']:,.2f} · Required R left {month_math['Required R Remaining']}R</div>
+</div>
+''', unsafe_allow_html=True)
 
 st.markdown('<div class="v35-divider-title">Top actionable tiles</div>', unsafe_allow_html=True)
 st.markdown(render_v353_opportunity_tiles(scan), unsafe_allow_html=True)
@@ -4079,9 +4347,9 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_3.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_3.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_3.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_4.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_4.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_4.csv", mime="text/csv")
 
 st.header("V35.2 — Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
@@ -4734,7 +5002,7 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_3.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_4.csv", mime="text/csv")
 
 
 
@@ -4756,7 +5024,7 @@ with tabs[20]:
         st.subheader("Expanded Active Scan")
         st.write(", ".join(symbols))
         st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
-        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_3.csv", mime="text/csv")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_4.csv", mime="text/csv")
 
 with tabs[21]:
     st.header("V35.2 Profit Engine")
@@ -4780,4 +5048,4 @@ with tabs[21]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.3 adds the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.4 adds the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
