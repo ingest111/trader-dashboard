@@ -12,7 +12,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.7 Trader Mode",
+    page_title="Deon's Trader Dashboard v35.8 Depth UI",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1068,6 +1068,136 @@ input:focus {
 
 .v357-mode-note { border-radius:18px; padding:14px 16px; margin:10px 0 18px; background:linear-gradient(135deg, rgba(212,175,55,.12), rgba(15,118,110,.08)); border:1px solid rgba(212,175,55,.32); color:#0f172a; font-weight:850; }
 .v357-mode-note span { color:#92400e; font-weight:950; }
+
+
+/* ============================================================
+   V35.8 DEPTH SYSTEM — 10% shadow layer across all boxes
+   Goal: make every decision panel feel elevated without muddying the warm theme.
+   ============================================================ */
+:root {
+    --v35-depth-1: 0 4px 12px rgba(6, 22, 34, 0.10);
+    --v35-depth-2: 0 8px 24px rgba(6, 22, 34, 0.12);
+    --v35-depth-3: 0 14px 36px rgba(6, 22, 34, 0.15);
+    --v35-depth-gold: 0 12px 30px rgba(212, 175, 55, 0.16), 0 5px 14px rgba(6, 22, 34, 0.10);
+    --v35-depth-copper: 0 12px 30px rgba(201, 122, 64, 0.14), 0 5px 14px rgba(6, 22, 34, 0.10);
+    --v35-top-light: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    --v35-bottom-shade: inset 0 -1px 0 rgba(6, 22, 34, 0.035);
+}
+
+/* Generic Streamlit surfaces: make them physically stand off the page */
+div[data-testid="stMetric"],
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"],
+[data-testid="stExpander"],
+.stAlert,
+div[data-testid="stAlert"] {
+    box-shadow: var(--v35-depth-1), var(--v35-top-light), var(--v35-bottom-shade) !important;
+}
+
+/* Main custom cards */
+.v35-card,
+.v35-status-card,
+.v35-lane-card,
+.v35-command-panel,
+.v357-live-card,
+.v357-dev-card,
+.v35-opportunity-tile,
+.v35-tile-trigger,
+.v35-banner,
+.v35-card-dark {
+    box-shadow: var(--v35-depth-2), var(--v35-top-light), var(--v35-bottom-shade) !important;
+}
+
+/* Hero and major command panels get stronger elevation */
+.v35-hero,
+.v35-hero-boost,
+.v35-banner,
+.v35-command-panel.dark,
+.v35-card-dark {
+    box-shadow: var(--v35-depth-3), 0 0 0 1px rgba(255,255,255,.08) inset, var(--v35-top-light) !important;
+}
+
+/* Gold/copper semantic elevation */
+.v35-command-panel.gold,
+.v35-opportunity-tile.rank-1,
+.v35-mini-pill.gold {
+    box-shadow: var(--v35-depth-gold), var(--v35-top-light), var(--v35-bottom-shade) !important;
+}
+.v35-command-panel.copper,
+.v35-mini-pill.warn,
+.v35-mode-PROBE {
+    box-shadow: var(--v35-depth-copper), var(--v35-top-light), var(--v35-bottom-shade) !important;
+}
+
+/* Tile depth + subtle lift makes opportunity cards easier to scan */
+.v35-opportunity-tile {
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.v35-opportunity-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 34px rgba(6,22,34,.14), var(--v35-top-light), var(--v35-bottom-shade) !important;
+}
+.v35-opportunity-tile.rank-1:hover {
+    box-shadow: 0 18px 42px rgba(212,175,55,.22), 0 8px 20px rgba(6,22,34,.12), var(--v35-top-light) !important;
+}
+
+/* Buttons should also sit above the canvas */
+.stButton button,
+.stDownloadButton button,
+button[kind="secondary"],
+button[kind="primary"] {
+    box-shadow: var(--v35-depth-1), var(--v35-top-light) !important;
+    transition: transform .14s ease, box-shadow .14s ease, background .14s ease;
+}
+.stButton button:hover,
+.stDownloadButton button:hover,
+button[kind="secondary"]:hover,
+button[kind="primary"]:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--v35-depth-2), var(--v35-top-light) !important;
+}
+
+/* Inputs remain readable but no longer flat */
+div[data-baseweb="select"] > div,
+input,
+textarea {
+    box-shadow: 0 3px 9px rgba(6,22,34,.08), inset 0 1px 0 rgba(255,255,255,.70) !important;
+}
+
+/* Sidebar controls get depth too, but softer because sidebar is dark */
+section[data-testid="stSidebar"] textarea,
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] select,
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+section[data-testid="stSidebar"] button {
+    box-shadow: 0 4px 12px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.32) !important;
+}
+
+/* Tables: shadow plus a soft rim so they read as panels */
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"] {
+    border: 1px solid rgba(201,122,64,.18) !important;
+    outline: 1px solid rgba(255,255,255,.42);
+    outline-offset: -2px;
+}
+
+/* Expander depth: strategy/dev sections stay visually tucked away but clearly clickable */
+[data-testid="stExpander"] {
+    background: rgba(255,255,255,.74) !important;
+    backdrop-filter: blur(6px);
+}
+
+/* Extra separation for the live trading summary cards */
+.v357-live-card {
+    border-color: rgba(212,175,55,.22) !important;
+}
+
+/* Keep the whole app premium, not noisy: dark text panels still get a clean top sheen */
+.v35-command-panel.dark,
+.v35-card-dark,
+.v35-banner {
+    border-top-color: rgba(255,247,214,.20) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -4695,9 +4825,9 @@ if developer_mode:
         st.caption("This section is for ChatGPT/development review, not live trade execution. It keeps the main trading screen clean.")
         st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
         c1, c2, c3 = st.columns(3)
-        c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_7.txt", mime="text/plain")
-        c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_7.txt", mime="text/plain")
-        c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_7.csv", mime="text/csv")
+        c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_8.txt", mime="text/plain")
+        c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_8.txt", mime="text/plain")
+        c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_8.csv", mime="text/csv")
 
 st.header("Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
@@ -5366,7 +5496,7 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_7.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_8.csv", mime="text/csv")
 
 
 
@@ -5388,7 +5518,7 @@ with tabs[20]:
         st.subheader("Expanded Active Scan")
         st.write(", ".join(symbols))
         st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
-        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_7.csv", mime="text/csv")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_8.csv", mime="text/csv")
 
 with tabs[21]:
     st.header("V35.2 Profit Engine")
@@ -5412,4 +5542,4 @@ with tabs[21]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.7 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.8 adds depth shadows, elevated panels, organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
