@@ -1036,6 +1036,35 @@ input:focus {
     .v355-workflow-grid, .v355-decision-band { grid-template-columns: 1fr; }
 }
 
+
+
+/* v35.6 Strategy Split: keep trading screen clean, tuck ChatGPT/dev packets away */
+.v356-clean-note {
+    border: 1px solid rgba(212,175,55,.28);
+    border-left: 5px solid #D4AF37;
+    border-radius: 18px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(255,251,235,.94), rgba(248,250,252,.96));
+    box-shadow: 0 10px 26px rgba(6,22,34,.07);
+    margin: 12px 0 16px 0;
+}
+.v356-clean-note .title {font-weight:950; color:#061622; letter-spacing:-.025em;}
+.v356-clean-note .body {font-size:.92rem; color:#475569; font-weight:650; margin-top:4px;}
+.v356-lab-badge {
+    display:inline-flex; align-items:center; gap:8px;
+    padding:8px 12px; border-radius:999px;
+    background: linear-gradient(90deg, rgba(8,51,68,.96), rgba(201,122,64,.92));
+    color:white; font-weight:950; font-size:.78rem;
+    border:1px solid rgba(212,175,55,.28);
+    box-shadow: 0 12px 28px rgba(6,22,34,.16);
+}
+.v356-mini-grid {display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; margin:12px 0 18px 0;}
+.v356-mini-card {border:1px solid rgba(15,118,110,.18); border-radius:18px; padding:14px 15px; background:rgba(255,255,255,.9); box-shadow:0 10px 24px rgba(6,22,34,.06);}
+.v356-mini-card .k {font-size:.75rem; font-weight:950; color:#64748b; text-transform:uppercase; letter-spacing:.07em;}
+.v356-mini-card .v {font-size:1.15rem; font-weight:950; color:#061622; margin-top:3px;}
+.v356-mini-card.gold {border-color:rgba(212,175,55,.38); background:linear-gradient(135deg, rgba(255,251,235,.98), rgba(255,255,255,.94));}
+.v356-mini-card.copper {border-color:rgba(201,122,64,.35); background:linear-gradient(135deg, rgba(255,247,237,.98), rgba(255,255,255,.94));}
+@media (max-width: 900px) {.v356-mini-grid {grid-template-columns: 1fr;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -4628,18 +4657,31 @@ st.markdown("""
 # 10/10 COMMAND CENTER
 # ============================================================
 
-st.markdown('<div class="v355-section-band"><span>02</span>Command Center · Briefing</div>', unsafe_allow_html=True)
-st.header("Step 1 — Copy This Trader Briefing")
-st.success("This is the main v35 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
-st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
-st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
+st.markdown('<div class="v355-section-band"><span>02</span>Live Trading Summary</div>', unsafe_allow_html=True)
+st.markdown("""
+<div class="v356-clean-note">
+  <div class="title">Clean trading view enabled</div>
+  <div class="body">ChatGPT packets, raw decision text, and development diagnostics are now tucked into Strategy Development. Open that area only when you want to send screenshots or ask for system review.</div>
+</div>
+""", unsafe_allow_html=True)
+st.markdown(f"""
+<div class="v356-mini-grid">
+  <div class="v356-mini-card gold"><div class="k">Primary Screen</div><div class="v">Trading Desk</div></div>
+  <div class="v356-mini-card copper"><div class="k">Research Area</div><div class="v">Strategy Development</div></div>
+  <div class="v356-mini-card"><div class="k">Packets Available</div><div class="v">{len(auto_news_hits)} news · {len(manual_news_hits)} manual</div></div>
+</div>
+""", unsafe_allow_html=True)
 
-c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_5.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_5.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_5.csv", mime="text/csv")
+with st.expander("Strategy Development · ChatGPT review packets and screenshot support", expanded=False):
+    st.markdown('<span class="v356-lab-badge">Open this only when sharing screenshots or asking for deeper review</span>', unsafe_allow_html=True)
+    st.caption("This section is for ChatGPT/development review, not live trade execution. It keeps the main trading screen clean.")
+    st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
+    c1, c2, c3 = st.columns(3)
+    c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_6.txt", mime="text/plain")
+    c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_6.txt", mime="text/plain")
+    c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_6.csv", mime="text/csv")
 
-st.header("V35.2 — Daily Profit Engine")
+st.header("Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
 mode_col1.metric("Mode", daily_mode_value)
 mode_col2.metric("Monthly P/L", f"${month_math['Monthly P/L']:,.2f}", f"{month_math['Monthly P/L %']}%")
@@ -4653,7 +4695,8 @@ elif daily_mode_value == "TRAIN":
     st.info(daily_mode_reason)
 else:
     st.error(daily_mode_reason)
-st.text_area("V35.2 Operating Brief", v352_brief, height=220)
+with st.expander("Strategy Development · V35.2 operating brief", expanded=False):
+    st.text_area("V35.2 Operating Brief", v352_brief, height=220)
 
 st.markdown('<div class="v355-section-band"><span>03</span>Discovery · Opportunity Intake</div>', unsafe_allow_html=True)
 st.header("V35.3 — Opportunity Discovery Engine")
@@ -4664,7 +4707,8 @@ if opportunity_df is not None and not opportunity_df.empty:
     od2.metric("Added to Scan", added_count)
     od3.metric("Top Discovery", opportunity_df.iloc[0]["Ticker"])
     od4.metric("Top Score", int(opportunity_df.iloc[0]["Discovery Score"]))
-    st.text_area("Opportunity Brief", opportunity_brief, height=120)
+    with st.expander("Strategy Development · Opportunity discovery notes", expanded=False):
+        st.text_area("Opportunity Brief", opportunity_brief, height=120)
 else:
     od1.metric("Discovery Names", 0)
     od2.metric("Added to Scan", 0)
@@ -4672,9 +4716,11 @@ else:
     od4.metric("Top Score", 0)
     st.info("Opportunity Discovery is disabled or no data was available. Manual scan is still active.")
 
-st.header("V35.1 — Today's Action Plan")
+st.header("Today's Action Plan")
 action_plan_text = v351_today_action_plan(scan, light, market_score, market_reason)
-st.text_area("Action Plan", action_plan_text, height=190)
+st.info(action_plan_text.split("\n")[0] if action_plan_text else "Action plan unavailable.")
+with st.expander("Strategy Development · Full action-plan text", expanded=False):
+    st.text_area("Action Plan", action_plan_text, height=190)
 if st.button("Save Current Scan Snapshot"):
     hist = append_csv_row(SCAN_HISTORY_FILE, v351_scan_history_row(scan, light, market_score, market_reason))
     st.success(f"Saved scan snapshot. History rows: {len(hist)}")
@@ -4713,7 +4759,8 @@ if default_ladder_plan["valid"]:
     st.dataframe(default_ladder_plan["entry_table"], use_container_width=True)
     st.subheader("Exit Ladder")
     st.dataframe(default_ladder_plan["exit_table"], use_container_width=True)
-    st.text_area("Execution Packet for ChatGPT", execution_text, height=320)
+    with st.expander("Strategy Development · Execution packet for ChatGPT", expanded=False):
+        st.text_area("Execution Packet for ChatGPT", execution_text, height=320)
 else:
     st.error(default_ladder_plan["reason"])
 
@@ -4767,31 +4814,31 @@ st.dataframe(
 # TABS
 # ============================================================
 
-st.markdown('<div class="v355-section-band"><span>06</span>Workflow Tabs · Organized By Trading Sequence</div>', unsafe_allow_html=True)
+st.markdown('<div class="v355-section-band"><span>06</span>Workflow Tabs · Trader First, Lab Second</div>', unsafe_allow_html=True)
 
 tabs = st.tabs([
-    "01 Command · Rankings",
-    "02 Command · Daily Board",
-    "03 Decide · Candidate Grades",
-    "04 Decide · Trade Plan",
-    "05 Command · Full Packet",
-    "06 Discover · Sector Flow",
-    "07 Research · Engine Scores",
-    "08 Decide · Watch / No Trade",
-    "09 Command · Participation",
-    "10 Discover · Catalysts",
-    "11 Discover · Multi-Source",
-    "12 Discover · Events",
-    "13 Review · Learning Log",
-    "14 Execute · Ladder Plan",
-    "15 Execute · Alpaca Broker",
-    "16 Execute · Robinhood Mirror",
-    "17 Decide · Charts",
-    "18 Command · Action Plan",
-    "19 Decide · Rejection Audit",
-    "20 Review · Scan History",
-    "21 Discover · Opportunity Engine",
-    "22 Command · Profit Engine",
+    "Trading Desk · Rankings",
+    "Trading Desk · Daily Board",
+    "Decision · Candidate Grades",
+    "Decision · Trade Plan",
+    "Strategy Development · Packets",
+    "Discovery · Sector Flow",
+    "Strategy Development · Engine Scores",
+    "Decision · Watch / No Trade",
+    "Trading Desk · Participation",
+    "Discovery · Catalysts",
+    "Discovery · Multi-Source",
+    "Discovery · Events",
+    "Review · Learning Log",
+    "Execution · Ladder Plan",
+    "Execution · Alpaca Broker",
+    "Execution · Robinhood Mirror",
+    "Decision · Charts",
+    "Trading Desk · Action Plan",
+    "Strategy Development · Rejection Audit",
+    "Review · Scan History",
+    "Discovery · Opportunity Engine",
+    "Trading Desk · Profit Engine",
 ])
 
 with tabs[0]:
@@ -4875,7 +4922,8 @@ with tabs[3]:
     st.write(f"Chart screenshot needed: **{row['Chart Needed']}**")
 
 with tabs[4]:
-    st.header("Full Decision Packet")
+    st.header("Strategy Development Packets")
+    st.info("Use this area only when you want ChatGPT to audit the system or when you are sending screenshots. It is intentionally separated from the live trading workflow.")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
     st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v35_1.json", mime="application/json")
 
@@ -4889,7 +4937,8 @@ with tabs[5]:
         st.dataframe(scan[scan["Sector"] == leader_sector].head(5), use_container_width=True)
 
 with tabs[6]:
-    st.header("Engine Scores")
+    st.header("Strategy Development · Engine Scores")
+    st.caption("Diagnostic scoring for improving the system. Not required for live trade execution.")
     st.dataframe(
         scan[[
             "Ticker", "Sector", "Candidate Grade", "V35 Score", "Professional Verdict", "Signal", "Tier", "Best Setup",
@@ -5295,7 +5344,7 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_5.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_6.csv", mime="text/csv")
 
 
 
@@ -5317,7 +5366,7 @@ with tabs[20]:
         st.subheader("Expanded Active Scan")
         st.write(", ".join(symbols))
         st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
-        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_5.csv", mime="text/csv")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_6.csv", mime="text/csv")
 
 with tabs[21]:
     st.header("V35.2 Profit Engine")
@@ -5341,4 +5390,4 @@ with tabs[21]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.5 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.6 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
