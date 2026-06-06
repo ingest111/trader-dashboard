@@ -866,6 +866,176 @@ input:focus {
 .v35-target-gold .sub { color: rgba(255,255,255,.82); font-weight:750; margin-top:8px; }
 
 
+
+
+/* ============================================================
+   V35.5 ORGANIZATION SYSTEM
+   The goal is not more decoration. It is workflow clarity:
+   Command -> Discover -> Decide -> Execute -> Review.
+   ============================================================ */
+.v355-workflow-shell {
+    border: 1px solid rgba(212,175,55,.24);
+    border-radius: 28px;
+    padding: 18px;
+    background:
+        radial-gradient(circle at 10% 0%, rgba(212,175,55,.16), transparent 30%),
+        radial-gradient(circle at 100% 15%, rgba(201,122,64,.13), transparent 28%),
+        linear-gradient(135deg, rgba(6,22,34,.98), rgba(8,51,68,.95) 54%, rgba(15,118,110,.86));
+    box-shadow: 0 26px 64px rgba(6,22,34,.26);
+    margin: 18px 0 22px 0;
+    color: white;
+}
+.v355-workflow-title {
+    font-size: 1.1rem;
+    font-weight: 950;
+    letter-spacing: -.035em;
+    margin-bottom: 5px;
+}
+.v355-workflow-subtitle {
+    color: rgba(255,255,255,.74);
+    font-size: .88rem;
+    font-weight: 650;
+    margin-bottom: 16px;
+}
+.v355-workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(130px, 1fr));
+    gap: 12px;
+}
+.v355-step-card {
+    position: relative;
+    border-radius: 20px;
+    padding: 15px 14px;
+    min-height: 116px;
+    background: rgba(255,255,255,.09);
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+}
+.v355-step-card:before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: 0;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #D4AF37, #C97A40, #10b981);
+}
+.v355-step-number {
+    color: #D4AF37;
+    font-weight: 950;
+    font-size: .76rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 8px;
+}
+.v355-step-title {
+    font-size: .98rem;
+    font-weight: 950;
+    letter-spacing: -.035em;
+    margin-bottom: 6px;
+}
+.v355-step-detail {
+    font-size: .78rem;
+    line-height: 1.35;
+    color: rgba(255,255,255,.72);
+    font-weight: 600;
+}
+.v355-decision-band {
+    display: grid;
+    grid-template-columns: 1.25fr .95fr .95fr .95fr;
+    gap: 14px;
+    margin: 14px 0 20px 0;
+}
+.v355-decision-card {
+    border-radius: 24px;
+    padding: 18px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.94));
+    border: 1px solid rgba(15,118,110,.18);
+    box-shadow: 0 18px 42px rgba(6,22,34,.10);
+    position: relative;
+    overflow: hidden;
+}
+.v355-decision-card:after {
+    content: "";
+    position: absolute;
+    width: 170px;
+    height: 170px;
+    right: -85px;
+    top: -90px;
+    background: radial-gradient(circle, rgba(212,175,55,.18), transparent 64%);
+}
+.v355-decision-card.gold {
+    border-color: rgba(212,175,55,.40);
+    box-shadow: 0 20px 48px rgba(184,134,11,.15);
+}
+.v355-decision-card.green { border-color: rgba(16,185,129,.30); }
+.v355-decision-card.copper { border-color: rgba(201,122,64,.36); }
+.v355-decision-label {
+    color: #64748b;
+    font-size: .74rem;
+    font-weight: 950;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+.v355-decision-value {
+    color: #061622;
+    font-size: 1.55rem;
+    line-height: 1.05;
+    font-weight: 950;
+    letter-spacing: -.055em;
+}
+.v355-decision-sub {
+    color: #475569;
+    font-size: .84rem;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-top: 8px;
+}
+.v355-next-action {
+    border-radius: 24px;
+    border: 1px solid rgba(212,175,55,.36);
+    padding: 20px 22px;
+    background:
+        linear-gradient(90deg, rgba(212,175,55,.16), rgba(201,122,64,.11), rgba(16,185,129,.09)),
+        linear-gradient(180deg, #ffffff, #f8fafc);
+    box-shadow: 0 18px 46px rgba(6,22,34,.10);
+    margin: 12px 0 20px 0;
+}
+.v355-next-action .label {
+    font-size: .78rem;
+    font-weight: 950;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: #92400e;
+    margin-bottom: 7px;
+}
+.v355-next-action .sentence {
+    color: #061622;
+    font-weight: 950;
+    font-size: 1.12rem;
+    line-height: 1.35;
+    letter-spacing: -.025em;
+}
+.v355-section-band {
+    margin: 28px 0 14px 0;
+    padding: 13px 16px;
+    border-radius: 18px;
+    background: linear-gradient(90deg, #061622, #083344, rgba(15,118,110,.90));
+    color: white;
+    font-weight: 950;
+    letter-spacing: -.03em;
+    box-shadow: 0 14px 34px rgba(6,22,34,.13);
+}
+.v355-section-band span {
+    color: #D4AF37;
+    margin-right: 8px;
+}
+@media (max-width: 1000px) {
+    .v355-workflow-grid, .v355-decision-band { grid-template-columns: 1fr; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -4046,6 +4216,120 @@ def render_v353_command_strip(daily_mode_value, month_math, scan_df, opportunity
     </div>
     """
 
+
+
+# ============================================================
+# V35.5 ORGANIZED WORKFLOW UI HELPERS
+# ============================================================
+
+def v355_safe_top_row(scan):
+    try:
+        if scan is not None and not scan.empty:
+            return scan.iloc[0]
+    except Exception:
+        pass
+    return pd.Series(dtype="object")
+
+
+def v355_next_action_sentence(scan, daily_mode_value, month_math):
+    row = v355_safe_top_row(scan)
+    if row.empty:
+        return "OBSERVE: no valid scan rows loaded yet. Keep Robinhood blocked until candidates appear."
+
+    ticker = row.get("Ticker", "N/A")
+    permission = str(row.get("V35.2 Permission", row.get("Professional Verdict", "WAIT")))
+    grade = row.get("Candidate Grade", "N/A")
+    setup = row.get("Best Setup", "setup")
+    trigger = row.get("V35 Trigger", row.get("Action Plan", "wait for confirmed trigger"))
+    price = safe_num(row.get("Price", 0))
+    stop = safe_num(row.get("Stop", 0))
+    target = safe_num(row.get("Target 1", 0))
+    risk = safe_num(row.get("Allowed Risk $", row.get("Dollar Risk", 0)))
+
+    if "REAL OK" in permission:
+        verb = "TRADE REVIEW"
+        route = "Robinhood review allowed; mirror in Alpaca."
+    elif "REAL REDUCED" in permission:
+        verb = "SMALL PROBE"
+        route = "Robinhood reduced-risk only; Alpaca mirror preferred."
+    elif "PAPER" in permission:
+        verb = "PAPER ONLY"
+        route = "Keep Robinhood blocked; test the idea in Alpaca."
+    elif "BLOCK" in permission:
+        verb = "BLOCKED"
+        route = "No real trade; use rejection audit before reconsidering."
+    else:
+        verb = "WAIT"
+        route = "No real-money action until trigger and permission improve."
+
+    px = f"entry ref ${price:.2f}" if price > 0 else "entry ref unavailable"
+    stp = f"stop ${stop:.2f}" if stop > 0 else "stop unavailable"
+    tgt = f"target ${target:.2f}" if target > 0 else "target unavailable"
+    return f"{verb}: {ticker} Grade {grade} {setup}. {trigger}. Use {px}, {stp}, {tgt}; allowed risk about ${risk:,.2f}. {route} Monthly status: {month_math.get('Monthly Status', 'Unknown')}."
+
+
+def render_v355_workflow_nav():
+    return """
+    <div class="v355-workflow-shell">
+      <div class="v355-workflow-title">Workflow Map</div>
+      <div class="v355-workflow-subtitle">Read left to right. The dashboard is organized around the actual trading sequence, not around internal features.</div>
+      <div class="v355-workflow-grid">
+        <div class="v355-step-card"><div class="v355-step-number">Step 01</div><div class="v355-step-title">Command</div><div class="v355-step-detail">Market mode, 20% pace, risk budget, and the single next action.</div></div>
+        <div class="v355-step-card"><div class="v355-step-number">Step 02</div><div class="v355-step-title">Discover</div><div class="v355-step-detail">Find fresh movers before they enter the normal watchlist.</div></div>
+        <div class="v355-step-card"><div class="v355-step-number">Step 03</div><div class="v355-step-title">Decide</div><div class="v355-step-detail">Grade, permission, trigger, rejection reason, and expected risk.</div></div>
+        <div class="v355-step-card"><div class="v355-step-number">Step 04</div><div class="v355-step-title">Execute</div><div class="v355-step-detail">Manual Robinhood plan, Alpaca mirror, ladder, stop, scale-outs.</div></div>
+        <div class="v355-step-card"><div class="v355-step-number">Step 05</div><div class="v355-step-title">Review</div><div class="v355-step-detail">Learning log, scan history, setup results, and process mistakes.</div></div>
+      </div>
+    </div>
+    """
+
+
+def render_v355_decision_band(scan, daily_mode_value, month_math):
+    row = v355_safe_top_row(scan)
+    ticker = row.get("Ticker", "None") if not row.empty else "None"
+    grade = row.get("Candidate Grade", "-") if not row.empty else "-"
+    setup = row.get("Best Setup", "No setup") if not row.empty else "No setup"
+    permission = row.get("V35.2 Permission", row.get("Professional Verdict", "Unknown")) if not row.empty else "Unknown"
+    score = row.get("V35.2 Priority Score", row.get("V35.1 Score", row.get("V35 Score", 0))) if not row.empty else 0
+    needed = safe_num(month_math.get("Needed $ / Day", 0)) if isinstance(month_math, dict) else 0
+    reqr = month_math.get("Required R Remaining", "-") if isinstance(month_math, dict) else "-"
+    monthly_status = month_math.get("Monthly Status", "Unknown") if isinstance(month_math, dict) else "Unknown"
+    return f"""
+    <div class="v355-decision-band">
+      <div class="v355-decision-card gold">
+        <div class="v355-decision-label">Best Opportunity</div>
+        <div class="v355-decision-value">{ticker} · Grade {grade}</div>
+        <div class="v355-decision-sub">{setup} · priority {score}</div>
+      </div>
+      <div class="v355-decision-card green">
+        <div class="v355-decision-label">Permission</div>
+        <div class="v355-decision-value">{permission}</div>
+        <div class="v355-decision-sub">Real money must pass this gate before execution.</div>
+      </div>
+      <div class="v355-decision-card copper">
+        <div class="v355-decision-label">Market Mode</div>
+        <div class="v355-decision-value">{daily_mode_value}</div>
+        <div class="v355-decision-sub">Determines full risk, reduced risk, paper only, or protect mode.</div>
+      </div>
+      <div class="v355-decision-card gold">
+        <div class="v355-decision-label">20% Pace</div>
+        <div class="v355-decision-value">{monthly_status}</div>
+        <div class="v355-decision-sub">Needed/day ${needed:,.2f} · R left {reqr}</div>
+      </div>
+    </div>
+    """
+
+
+def render_v355_next_action(scan, daily_mode_value, month_math):
+    sentence = v355_next_action_sentence(scan, daily_mode_value, month_math)
+    return f"""
+    <div class="v355-next-action">
+      <div class="label">Next Action</div>
+      <div class="sentence">{sentence}</div>
+    </div>
+    """
+
+
 # ============================================================
 # APP
 # ============================================================
@@ -4303,7 +4587,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="v35-divider-title">Decision cockpit</div>', unsafe_allow_html=True)
+st.markdown("<div class='v355-section-band'><span>01</span>Today's Trading Desk</div>", unsafe_allow_html=True)
+st.markdown(render_v355_workflow_nav(), unsafe_allow_html=True)
+st.markdown(render_v355_decision_band(scan, daily_mode_value, month_math), unsafe_allow_html=True)
+st.markdown(render_v355_next_action(scan, daily_mode_value, month_math), unsafe_allow_html=True)
 st.markdown(render_v353_command_strip(daily_mode_value, month_math, scan, opportunity_df), unsafe_allow_html=True)
 
 st.markdown(f'''
@@ -4341,15 +4628,16 @@ st.markdown("""
 # 10/10 COMMAND CENTER
 # ============================================================
 
+st.markdown('<div class="v355-section-band"><span>02</span>Command Center · Briefing</div>', unsafe_allow_html=True)
 st.header("Step 1 — Copy This Trader Briefing")
 st.success("This is the main v35 workflow. Copy this box into ChatGPT first. Do not send screenshots unless the briefing says a chart is needed.")
 st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides: {len(manual_news_hits)} tickers")
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_4.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_4.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_4.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_5.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_5.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_5.csv", mime="text/csv")
 
 st.header("V35.2 — Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
@@ -4367,6 +4655,7 @@ else:
     st.error(daily_mode_reason)
 st.text_area("V35.2 Operating Brief", v352_brief, height=220)
 
+st.markdown('<div class="v355-section-band"><span>03</span>Discovery · Opportunity Intake</div>', unsafe_allow_html=True)
 st.header("V35.3 — Opportunity Discovery Engine")
 od1, od2, od3, od4 = st.columns(4)
 if opportunity_df is not None and not opportunity_df.empty:
@@ -4390,6 +4679,7 @@ if st.button("Save Current Scan Snapshot"):
     hist = append_csv_row(SCAN_HISTORY_FILE, v351_scan_history_row(scan, light, market_score, market_reason))
     st.success(f"Saved scan snapshot. History rows: {len(hist)}")
 
+st.markdown('<div class="v355-section-band"><span>04</span>Decision · Trade Permission</div>', unsafe_allow_html=True)
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
 tradeable = scan[scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
@@ -4410,6 +4700,7 @@ if top_candidate and top_candidate["Chart Needed"]:
 else:
     st.info("No chart screenshot needed yet. Paste the Trader Briefing first.")
 
+st.markdown('<div class="v355-section-band"><span>05</span>Execution · Manual Plan</div>', unsafe_allow_html=True)
 st.header("Step 3 — Trade Execution Plan")
 if default_ladder_plan["valid"]:
     st.success(f"Execution ladder built for {default_ladder_plan['summary']['Ticker']}. This is a manual plan, not an automatic order.")
@@ -4476,29 +4767,31 @@ st.dataframe(
 # TABS
 # ============================================================
 
+st.markdown('<div class="v355-section-band"><span>06</span>Workflow Tabs · Organized By Trading Sequence</div>', unsafe_allow_html=True)
+
 tabs = st.tabs([
-    "Money Flow Board",
-    "Daily Trader",
-    "V35 Candidates",
-    "Trade Plan",
-    "Full Packet",
-    "Sector Flow",
-    "Engine Scores",
-    "No Trade / Watch",
-    "Participation",
-    "Catalysts",
-    "Multi-Source",
-    "Earnings/Premarket",
-    "Learning Log",
-    "Execution Engine",
-    "Broker Execution",
-    "Robinhood Mirror",
-    "Charts",
-    "V35.1 Action Plan",
-    "Rejection Audit",
-    "Scan History",
-    "Opportunity Discovery",
-    "V35.2 Profit Engine",
+    "01 Command · Rankings",
+    "02 Command · Daily Board",
+    "03 Decide · Candidate Grades",
+    "04 Decide · Trade Plan",
+    "05 Command · Full Packet",
+    "06 Discover · Sector Flow",
+    "07 Research · Engine Scores",
+    "08 Decide · Watch / No Trade",
+    "09 Command · Participation",
+    "10 Discover · Catalysts",
+    "11 Discover · Multi-Source",
+    "12 Discover · Events",
+    "13 Review · Learning Log",
+    "14 Execute · Ladder Plan",
+    "15 Execute · Alpaca Broker",
+    "16 Execute · Robinhood Mirror",
+    "17 Decide · Charts",
+    "18 Command · Action Plan",
+    "19 Decide · Rejection Audit",
+    "20 Review · Scan History",
+    "21 Discover · Opportunity Engine",
+    "22 Command · Profit Engine",
 ])
 
 with tabs[0]:
@@ -5002,7 +5295,7 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_4.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_5.csv", mime="text/csv")
 
 
 
@@ -5024,7 +5317,7 @@ with tabs[20]:
         st.subheader("Expanded Active Scan")
         st.write(", ".join(symbols))
         st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
-        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_4.csv", mime="text/csv")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_5.csv", mime="text/csv")
 
 with tabs[21]:
     st.header("V35.2 Profit Engine")
@@ -5048,4 +5341,4 @@ with tabs[21]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.4 adds the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.5 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
