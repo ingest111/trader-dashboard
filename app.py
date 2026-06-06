@@ -11,8 +11,89 @@ import streamlit as st
 import yfinance as yf
 import requests
 
+
+# ============================================================
+# V35.10 WARM TABLE RENDERER
+# Automatically converts Streamlit dataframes from stark white
+# grids into warm parchment panels with gold headers.
+# ============================================================
+_ORIGINAL_ST_DATAFRAME = st.dataframe
+
+
+def _warm_table_styles(styler):
+    """Apply a warm trading-desk table skin to pandas Styler objects."""
+    return styler.set_table_styles([
+        {
+            "selector": "thead th",
+            "props": [
+                ("background", "linear-gradient(180deg, #ffe6ad 0%, #f5d58b 100%)"),
+                ("color", "#061622"),
+                ("font-weight", "800"),
+                ("border-bottom", "1px solid rgba(184, 134, 11, .35)"),
+                ("border-right", "1px solid rgba(184, 134, 11, .15)"),
+            ],
+        },
+        {
+            "selector": "tbody td",
+            "props": [
+                ("background-color", "#fff2d2"),
+                ("color", "#061622"),
+                ("border-color", "rgba(184, 134, 11, .14)"),
+            ],
+        },
+        {
+            "selector": "tbody tr:nth-child(even) td",
+            "props": [
+                ("background-color", "#f8e8bf"),
+            ],
+        },
+        {
+            "selector": "tbody tr:hover td",
+            "props": [
+                ("background-color", "#ffe0a3"),
+            ],
+        },
+        {
+            "selector": "table",
+            "props": [
+                ("background", "#fff2d2"),
+                ("border-collapse", "collapse"),
+            ],
+        },
+    ]).format(precision=2)
+
+
+def _highlight_trading_cells(val):
+    """Semantic color accents inside warm tables without making the grid cold/white."""
+    s = str(val).upper()
+    if "TRADE CANDIDATE" in s or s == "REAL OK" or s == "ATTACK" or s == "A":
+        return "background-color: #dff7df; color: #064e3b; font-weight: 800;"
+    if "WAIT" in s or "PROBE" in s or "PAPER" in s or s == "B" or s == "C":
+        return "background-color: #ffe5b8; color: #8a3f00; font-weight: 800;"
+    if "AVOID" in s or "BLOCK" in s or "NO TRADE" in s or s == "D" or s == "PROTECT":
+        return "background-color: #f8d0c3; color: #8f1d1d; font-weight: 800;"
+    if "WATCH" in s:
+        return "background-color: #dcfce7; color: #065f46; font-weight: 800;"
+    return ""
+
+
+def warm_dataframe(data=None, *args, **kwargs):
+    """Drop-in replacement for st.dataframe that avoids pure-white table surfaces."""
+    try:
+        if isinstance(data, pd.DataFrame):
+            styled = _warm_table_styles(data.style.map(_highlight_trading_cells))
+            return _ORIGINAL_ST_DATAFRAME(styled, *args, **kwargs)
+        if isinstance(data, pd.io.formats.style.Styler):
+            return _ORIGINAL_ST_DATAFRAME(_warm_table_styles(data), *args, **kwargs)
+    except Exception:
+        pass
+    return _ORIGINAL_ST_DATAFRAME(data, *args, **kwargs)
+
+
+st.dataframe = warm_dataframe
+
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.8 Depth UI",
+    page_title="Deon's Trader Dashboard v35.10 Warm Tables",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1346,6 +1427,133 @@ section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
     border-radius: 18px !important;
 }
 
+</style>
+""", unsafe_allow_html=True)
+
+
+
+st.markdown("""
+<style>
+/* ============================================================
+   V35.10 WARM TABLE + PANEL OVERRIDE
+   This is the final pass that removes the remaining pure-white
+   dataframe/card look and replaces it with parchment/gold depth.
+   ============================================================ */
+:root {
+    --v3510-bg-dark: #071927;
+    --v3510-panel: #fff0c6;
+    --v3510-panel-2: #f7e5b7;
+    --v3510-panel-3: #ecd09a;
+    --v3510-gold: #d4af37;
+    --v3510-copper: #c97a40;
+    --v3510-ink: #061622;
+    --v3510-grid: rgba(135, 92, 19, .18);
+}
+
+/* Section containers behind tables: dark terminal frame + warm inner panel */
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"] {
+    background:
+        linear-gradient(180deg, rgba(255, 238, 190, .96) 0%, rgba(247, 226, 179, .96) 100%) !important;
+    border: 1px solid rgba(212,175,55,.58) !important;
+    border-radius: 22px !important;
+    box-shadow:
+        0 0 0 1px rgba(255, 246, 218, .55) inset,
+        0 3px 0 rgba(255,255,255,.38) inset,
+        0 16px 34px rgba(6,22,34,.18),
+        0 0 24px rgba(212,175,55,.10) !important;
+    overflow: hidden !important;
+}
+
+/* Streamlit's dataframe is canvas/grid based, so target every exposed layer aggressively. */
+div[data-testid="stDataFrame"] * {
+    border-color: var(--v3510-grid) !important;
+}
+
+div[data-testid="stDataFrame"] [role="grid"],
+div[data-testid="stDataFrame"] [role="rowgroup"],
+div[data-testid="stDataFrame"] [role="row"],
+div[data-testid="stDataFrame"] [role="gridcell"],
+div[data-testid="stDataFrame"] [role="columnheader"],
+div[data-testid="stDataFrame"] canvas,
+div[data-testid="stDataFrame"] iframe {
+    background-color: #fff0c6 !important;
+}
+
+/* For dataframe implementations that expose normal DOM cells. */
+div[data-testid="stDataFrame"] th,
+div[data-testid="stTable"] th {
+    background: linear-gradient(180deg, #ffe8b4 0%, #f1cf83 100%) !important;
+    color: var(--v3510-ink) !important;
+    font-weight: 900 !important;
+    border-color: var(--v3510-grid) !important;
+}
+
+div[data-testid="stDataFrame"] td,
+div[data-testid="stTable"] td {
+    background: #fff0c6 !important;
+    color: var(--v3510-ink) !important;
+    border-color: var(--v3510-grid) !important;
+}
+
+div[data-testid="stTable"] tbody tr:nth-child(even) td,
+div[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+    background: #f7e5b7 !important;
+}
+
+/* Table section headers get the same premium dark frame from the mockup. */
+h2, h3, .v34-section-title, .v35-section-title {
+    color: #061622 !important;
+}
+
+/* Warm up generic white blocks that Streamlit injects around tables/cards. */
+.element-container:has(div[data-testid="stDataFrame"]),
+.element-container:has(div[data-testid="stTable"]) {
+    background:
+        radial-gradient(circle at 98% 4%, rgba(212,175,55,.13), transparent 32%),
+        linear-gradient(180deg, rgba(7,25,39,.04), rgba(7,25,39,.015)) !important;
+    border-radius: 24px !important;
+}
+
+/* Metric/card panels should be parchment, not white. */
+div[data-testid="stMetric"],
+.v34-card,
+.v35-card,
+.v35-status-card,
+.v35-lane-card,
+.v35-opportunity-tile,
+.v356-mini-card,
+.v357-live-card {
+    background:
+        radial-gradient(circle at 86% 8%, rgba(212,175,55,.16), transparent 32%),
+        linear-gradient(180deg, #fff0c6 0%, #f4e2b0 100%) !important;
+    border-color: rgba(212,175,55,.38) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.62),
+        0 12px 28px rgba(6,22,34,.13),
+        0 0 18px rgba(212,175,55,.08) !important;
+}
+
+/* Rank-one / top-opportunity cards get a stronger gold frame like the reference image. */
+.v35-opportunity-tile.rank-1,
+.v35-command-panel.gold,
+.v356-mini-card.gold {
+    background:
+        radial-gradient(circle at 84% 10%, rgba(212,175,55,.28), transparent 35%),
+        linear-gradient(180deg, #ffe7a8 0%, #f4d58d 100%) !important;
+    border-color: rgba(212,175,55,.72) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.70),
+        0 16px 36px rgba(6,22,34,.18),
+        0 0 28px rgba(212,175,55,.20) !important;
+}
+
+/* Inputs stay warm too. */
+input, textarea, div[data-baseweb="select"] > div {
+    background: linear-gradient(180deg, #fff0c6 0%, #f6e2ae 100%) !important;
+    color: #061622 !important;
+    border-color: rgba(212,175,55,.42) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
