@@ -12,7 +12,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v35.4 Warm UI",
+    page_title="Deon's Trader Dashboard v35.7 Trader Mode",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1038,7 +1038,7 @@ input:focus {
 
 
 
-/* v35.6 Strategy Split: keep trading screen clean, tuck ChatGPT/dev packets away */
+/* v35.7 Strategy Split: keep trading screen clean, tuck ChatGPT/dev packets away */
 .v356-clean-note {
     border: 1px solid rgba(212,175,55,.28);
     border-left: 5px solid #D4AF37;
@@ -1065,6 +1065,9 @@ input:focus {
 .v356-mini-card.gold {border-color:rgba(212,175,55,.38); background:linear-gradient(135deg, rgba(255,251,235,.98), rgba(255,255,255,.94));}
 .v356-mini-card.copper {border-color:rgba(201,122,64,.35); background:linear-gradient(135deg, rgba(255,247,237,.98), rgba(255,255,255,.94));}
 @media (max-width: 900px) {.v356-mini-grid {grid-template-columns: 1fr;}}
+
+.v357-mode-note { border-radius:18px; padding:14px 16px; margin:10px 0 18px; background:linear-gradient(135deg, rgba(212,175,55,.12), rgba(15,118,110,.08)); border:1px solid rgba(212,175,55,.32); color:#0f172a; font-weight:850; }
+.v357-mode-note span { color:#92400e; font-weight:950; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -4181,7 +4184,7 @@ def permission_pill_class(permission):
 def render_v353_opportunity_tiles(scan_df):
     if scan_df is None or scan_df.empty:
         return ""
-    rows = []
+    cards = []
     for rank, (_, row) in enumerate(scan_df.head(3).iterrows(), 1):
         ticker = ui_escape(row.get("Ticker", ""))
         sector = ui_escape(row.get("Sector", ""))
@@ -4193,23 +4196,23 @@ def render_v353_opportunity_tiles(scan_df):
         risk = ui_escape(row.get("Allowed Risk $", row.get("Dollar Risk", "")))
         shares = ui_escape(row.get("Shares", ""))
         pill = permission_pill_class(permission)
-        rows.append(f"""
-        <div class="v35-opportunity-tile rank-{rank}">
-          <div class="v35-tile-rank">#{rank}</div>
-          <div class="v35-tile-ticker">{ticker}</div>
-          <div class="v35-tile-meta">{sector} · {setup}</div>
-          <div class="v35-tile-row">
-            <span class="v35-mini-pill {pill}">{permission}</span>
-            <span class="v35-mini-pill">Grade {grade}</span>
-            <span class="v35-mini-pill gold">Score {score}</span>
-            <span class="v35-mini-pill">Risk ${risk}</span>
-            <span class="v35-mini-pill">Shares {shares}</span>
-          </div>
-          <div class="v35-tile-trigger">{trigger}</div>
-        </div>
-        """)
-    return '<div class="v35-tile-grid">' + ''.join(rows) + '</div>'
-
+        card = (
+            f'<div class="v35-opportunity-tile rank-{rank}">'
+            f'<div class="v35-tile-rank">#{rank}</div>'
+            f'<div class="v35-tile-ticker">{ticker}</div>'
+            f'<div class="v35-tile-meta">{sector} &middot; {setup}</div>'
+            f'<div class="v35-tile-row">'
+            f'<span class="v35-mini-pill {pill}">{permission}</span>'
+            f'<span class="v35-mini-pill">Grade {grade}</span>'
+            f'<span class="v35-mini-pill gold">Score {score}</span>'
+            f'<span class="v35-mini-pill">Risk ${risk}</span>'
+            f'<span class="v35-mini-pill">Shares {shares}</span>'
+            f'</div>'
+            f'<div class="v35-tile-trigger">{trigger}</div>'
+            f'</div>'
+        )
+        cards.append(card)
+    return '<div class="v35-tile-grid">' + ''.join(cards) + '</div>'
 
 def render_v353_command_strip(daily_mode_value, month_math, scan_df, opportunity_df):
     best_permission = "No real candidate"
@@ -4384,6 +4387,11 @@ st.caption(f"Last updated CT: {ct_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
 st.sidebar.markdown("**Warm color legend:** Gold = opportunity, Copper = pending action, Emerald = confirmed permission, Red = blocked risk.")
+developer_mode = st.sidebar.checkbox("Developer Mode / Strategy Lab", value=False, help="Turn on only when you want ChatGPT packets, raw diagnostics, screenshot support, and system-development sections.")
+if not developer_mode:
+    st.sidebar.caption("Trader Mode is active: internal packets and diagnostics are hidden.")
+else:
+    st.sidebar.warning("Developer Mode is active: diagnostics and ChatGPT review material are visible.")
 watchlist_text = st.sidebar.text_area("Manual Watchlist", ",".join(DEFAULT_WATCHLIST), height=90)
 scan_text = st.sidebar.text_area("Scanner Universe", ",".join(DEFAULT_SCAN), height=170)
 
@@ -4632,6 +4640,10 @@ st.markdown(f'''
 
 st.markdown('<div class="v35-divider-title">Top actionable tiles</div>', unsafe_allow_html=True)
 st.markdown(render_v353_opportunity_tiles(scan), unsafe_allow_html=True)
+if developer_mode:
+    with st.expander('Strategy Development · UI Diagnostics', expanded=False):
+        st.caption('Rendered tile HTML is shown only here for troubleshooting. It should never appear in Trader Mode.')
+        st.code(render_v353_opportunity_tiles(scan), language='html')
 
 st.markdown("""
 <div class="v35-lane-grid">
@@ -4657,6 +4669,11 @@ st.markdown("""
 # 10/10 COMMAND CENTER
 # ============================================================
 
+if developer_mode:
+    st.markdown('<div class="v357-mode-note"><span>Developer Mode:</span> Strategy Development packets and diagnostics are visible for screenshot/review work.</div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div class="v357-mode-note"><span>Trader Mode:</span> internal ChatGPT packets, raw markup, and diagnostics are hidden. Use the trading workflow only.</div>', unsafe_allow_html=True)
+
 st.markdown('<div class="v355-section-band"><span>02</span>Live Trading Summary</div>', unsafe_allow_html=True)
 st.markdown("""
 <div class="v356-clean-note">
@@ -4672,14 +4689,15 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("Strategy Development · ChatGPT review packets and screenshot support", expanded=False):
-    st.markdown('<span class="v356-lab-badge">Open this only when sharing screenshots or asking for deeper review</span>', unsafe_allow_html=True)
-    st.caption("This section is for ChatGPT/development review, not live trade execution. It keeps the main trading screen clean.")
-    st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
-    c1, c2, c3 = st.columns(3)
-    c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_6.txt", mime="text/plain")
-    c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_6.txt", mime="text/plain")
-    c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_6.csv", mime="text/csv")
+if developer_mode:
+    with st.expander("Strategy Development · ChatGPT review packets and screenshot support", expanded=False):
+        st.markdown('<span class="v356-lab-badge">Open this only when sharing screenshots or asking for deeper review</span>', unsafe_allow_html=True)
+        st.caption("This section is for ChatGPT/development review, not live trade execution. It keeps the main trading screen clean.")
+        st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v35_7.txt", mime="text/plain")
+        c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v35_7.txt", mime="text/plain")
+        c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v35_7.csv", mime="text/csv")
 
 st.header("Daily Profit Engine")
 mode_col1, mode_col2, mode_col3, mode_col4 = st.columns(4)
@@ -4695,8 +4713,9 @@ elif daily_mode_value == "TRAIN":
     st.info(daily_mode_reason)
 else:
     st.error(daily_mode_reason)
-with st.expander("Strategy Development · V35.2 operating brief", expanded=False):
-    st.text_area("V35.2 Operating Brief", v352_brief, height=220)
+if developer_mode:
+    with st.expander("Strategy Development · V35.2 operating brief", expanded=False):
+        st.text_area("V35.2 Operating Brief", v352_brief, height=220)
 
 st.markdown('<div class="v355-section-band"><span>03</span>Discovery · Opportunity Intake</div>', unsafe_allow_html=True)
 st.header("V35.3 — Opportunity Discovery Engine")
@@ -4707,8 +4726,9 @@ if opportunity_df is not None and not opportunity_df.empty:
     od2.metric("Added to Scan", added_count)
     od3.metric("Top Discovery", opportunity_df.iloc[0]["Ticker"])
     od4.metric("Top Score", int(opportunity_df.iloc[0]["Discovery Score"]))
-    with st.expander("Strategy Development · Opportunity discovery notes", expanded=False):
-        st.text_area("Opportunity Brief", opportunity_brief, height=120)
+    if developer_mode:
+        with st.expander("Strategy Development · Opportunity discovery notes", expanded=False):
+            st.text_area("Opportunity Brief", opportunity_brief, height=120)
 else:
     od1.metric("Discovery Names", 0)
     od2.metric("Added to Scan", 0)
@@ -4719,8 +4739,9 @@ else:
 st.header("Today's Action Plan")
 action_plan_text = v351_today_action_plan(scan, light, market_score, market_reason)
 st.info(action_plan_text.split("\n")[0] if action_plan_text else "Action plan unavailable.")
-with st.expander("Strategy Development · Full action-plan text", expanded=False):
-    st.text_area("Action Plan", action_plan_text, height=190)
+if developer_mode:
+    with st.expander("Strategy Development · Full action-plan text", expanded=False):
+        st.text_area("Action Plan", action_plan_text, height=190)
 if st.button("Save Current Scan Snapshot"):
     hist = append_csv_row(SCAN_HISTORY_FILE, v351_scan_history_row(scan, light, market_score, market_reason))
     st.success(f"Saved scan snapshot. History rows: {len(hist)}")
@@ -4759,8 +4780,9 @@ if default_ladder_plan["valid"]:
     st.dataframe(default_ladder_plan["entry_table"], use_container_width=True)
     st.subheader("Exit Ladder")
     st.dataframe(default_ladder_plan["exit_table"], use_container_width=True)
-    with st.expander("Strategy Development · Execution packet for ChatGPT", expanded=False):
-        st.text_area("Execution Packet for ChatGPT", execution_text, height=320)
+    if developer_mode:
+        with st.expander("Strategy Development · Execution packet for ChatGPT", expanded=False):
+            st.text_area("Execution Packet for ChatGPT", execution_text, height=320)
 else:
     st.error(default_ladder_plan["reason"])
 
@@ -5344,7 +5366,7 @@ with tabs[19]:
         st.info("No saved scan snapshots yet.")
     else:
         st.dataframe(hist.tail(50), use_container_width=True, height=520)
-        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_6.csv", mime="text/csv")
+        st.download_button("Download Scan History CSV", data=df_csv(hist), file_name="scan_history_v35_7.csv", mime="text/csv")
 
 
 
@@ -5366,7 +5388,7 @@ with tabs[20]:
         st.subheader("Expanded Active Scan")
         st.write(", ".join(symbols))
         st.caption(f"Manual symbols: {len(manual_symbols)} | Discovery additions: {len(active_added)} | Total scanned by v35.2: {len(symbols)}")
-        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_6.csv", mime="text/csv")
+        st.download_button("Download Discovery CSV", data=df_csv(opportunity_df), file_name="opportunity_discovery_v35_7.csv", mime="text/csv")
 
 with tabs[21]:
     st.header("V35.2 Profit Engine")
@@ -5390,4 +5412,4 @@ with tabs[21]:
     st.write(f"Daily loss stop: ${float(max_daily_loss_dollars):,.2f}")
     st.warning("The 20% monthly target is treated as a pacing target, not a reason to override risk blocks.")
 
-st.caption("v35.6 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
+st.caption("v35.7 adds organized workflow navigation, command-center hierarchy, and the Opportunity Discovery Engine on top of v35.2 profit controls, monthly pace math, real/paper permission logic, and hard trading-mode controls.")
