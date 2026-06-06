@@ -8,6 +8,69 @@ import streamlit as st
 import yfinance as yf
 import requests
 
+st.set_page_config(
+    page_title="Deon's Trader Dashboard v33",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown("""
+<style>
+.block-container { padding-top: 1.6rem; padding-bottom: 3rem; }
+div[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid rgba(148,163,184,.35);
+    padding: 16px 18px;
+    border-radius: 18px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+}
+div[data-testid="stMetricLabel"] { color: #64748b; font-weight: 800; }
+div[data-testid="stMetricValue"] { font-weight: 900; }
+.v33-hero {
+    padding: 24px 28px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #111827 0%, #0f766e 55%, #2563eb 100%);
+    color: white;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, .22);
+    margin-bottom: 20px;
+}
+.v33-hero h1 { margin: 0; font-size: 2.35rem; letter-spacing: -0.04em; }
+.v33-hero p { margin: 8px 0 0 0; color: rgba(255,255,255,.86); font-size: 1rem; }
+.v33-card {
+    border: 1px solid rgba(148,163,184,.25);
+    border-radius: 18px;
+    padding: 16px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .06);
+    margin-bottom: 14px;
+}
+.v33-pill {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: .78rem;
+    letter-spacing: .02em;
+    margin-right: 8px;
+}
+.pill-green { background: #dcfce7; color: #166534; }
+.pill-yellow { background: #fef3c7; color: #92400e; }
+.pill-red { background: #fee2e2; color: #991b1b; }
+.pill-blue { background: #dbeafe; color: #1e40af; }
+.pill-purple { background: #ede9fe; color: #5b21b6; }
+.v33-section-title {
+    font-size: 1.35rem;
+    font-weight: 900;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    letter-spacing: -0.03em;
+}
+.small-muted { color: #64748b; font-size: .88rem; }
+</style>
+""", unsafe_allow_html=True)
+
+
 # ============================================================
 # DEON'S TRADER DASHBOARD v31
 # BROKER EXECUTION INFRASTRUCTURE BUILD
@@ -21,7 +84,7 @@ import requests
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v32", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v33", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1518,7 +1581,7 @@ def adaptive_execution_style(row):
 
 def ensure_trade_plan_fields(row, cash, risk_pct):
     """
-    v32 repair layer:
+    v33 repair layer:
     If the broker engine receives a ranked row with missing/zero shares, stop, or targets,
     create a conservative executable plan from price, setup strength, and risk settings.
     """
@@ -1593,7 +1656,7 @@ def ensure_trade_plan_fields(row, cash, risk_pct):
 def build_ladder_plan(row, cash, risk_pct, entry_style="Pullback ladder", tranches=4):
     """
     Creates an execution plan and broker-ready ladder.
-    v32 repairs missing trade-plan fields and supports Adaptive execution.
+    v33 repairs missing trade-plan fields and supports Adaptive execution.
     """
     if entry_style == "Adaptive":
         entry_style = adaptive_execution_style(row)
@@ -1775,7 +1838,7 @@ def execution_packet(row, ladder_plan):
 
     s = ladder_plan["summary"]
     lines = []
-    lines.append("TRADE EXECUTION ENGINE v32")
+    lines.append("TRADE EXECUTION ENGINE v33")
     lines.append(f"Ticker: {s['Ticker']}")
     lines.append(f"Entry style: {s['Entry Style']}")
     lines.append(f"Reference entry: {s['Reference Entry']}")
@@ -1972,6 +2035,144 @@ def broker_safety_check(ladder_plan, cash, max_order_value, max_total_risk):
     return len(issues) == 0, issues
 
 
+
+# ============================================================
+# V33 DAILY TRADER MODE
+# ============================================================
+
+def v33_trade_frequency_score(row):
+    score = 0
+    signal = str(row.get("Signal", "")).upper()
+    verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
+    setup = str(row.get("Best Setup", "")).upper()
+    reason = str(row.get("Reason", "")).upper()
+    tier = str(row.get("Tier", "")).upper()
+
+    score += safe_num(row.get("Money Flow Score", 0)) * 0.22
+    score += safe_num(row.get("Best Score", 0)) * 0.18
+    score += safe_num(row.get("Total Opportunity Score", 0)) * 0.18
+    score += safe_num(row.get("RS Score", 0)) * 0.12
+    score += safe_num(row.get("ORB Score", 0)) * 0.10
+    score += safe_num(row.get("VWAP Score", 0)) * 0.10
+    score += safe_num(row.get("Momentum Score", 0)) * 0.10
+
+    if signal == "TRADE":
+        score += 12
+    elif signal == "SMALL TRADE":
+        score += 6
+    elif signal == "WATCH":
+        score += 3
+
+    if "TRADE CANDIDATE" in verdict:
+        score += 10
+    elif "WAIT" in verdict:
+        score += 6
+    elif "AVOID" in verdict:
+        score -= 8
+
+    if tier == "A+":
+        score += 8
+    elif tier == "A":
+        score += 5
+    elif tier == "B":
+        score += 2
+
+    if "ORB" in setup or "BREAKOUT" in reason:
+        score += 5
+    if "VWAP" in setup or "VWAP" in reason:
+        score += 4
+    if "RELATIVE" in reason or "STRONG RS" in reason:
+        score += 4
+    if "GAP" in setup or "GAP" in reason:
+        score += 3
+
+    return round(score, 1)
+
+
+def v33_setup_playbook(row):
+    setup = str(row.get("Best Setup", "")).upper()
+    reason = str(row.get("Reason", "")).upper()
+    above_vwap = bool(row.get("Above VWAP", False))
+    or_zone = str(row.get("OR Zone", "")).upper()
+
+    if "ORB" in setup or "BREAKOUT" in reason or "BREAKOUT" in or_zone:
+        return "ORB Breakout"
+    if "VWAP" in setup and above_vwap:
+        return "VWAP Reclaim / Hold"
+    if "GAP" in setup or "GAP" in reason:
+        return "Gap-and-Go"
+    if "MOMENTUM" in setup:
+        return "Relative Strength Continuation"
+    if "DAILY" in setup:
+        return "Daily Breakout"
+    return "First Pullback / Watch"
+
+
+def v33_long_short_bias(row):
+    signal = str(row.get("Signal", "")).upper()
+    verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
+    gap = safe_num(row.get("Gap %", 0))
+    one_day = safe_num(row.get("1D %", 0))
+    above_vwap = bool(row.get("Above VWAP", False))
+    or_zone = str(row.get("OR Zone", "")).upper()
+    rs = safe_num(row.get("RS Score", 0))
+    mf = safe_num(row.get("Money Flow Score", 0))
+
+    if signal in ["TRADE", "SMALL TRADE"] and above_vwap and ("BREAKOUT" in or_zone or rs >= 60 or mf >= 55):
+        return "Long Bias"
+    if one_day < -2 and gap < -2 and not above_vwap:
+        return "Short Bias Watch"
+    if "AVOID" in verdict and one_day < -3:
+        return "Short Bias Watch"
+    return "Neutral / Watch"
+
+
+def v33_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=65):
+    if scan_df is None or len(scan_df) == 0:
+        return pd.DataFrame()
+
+    board = scan_df.copy()
+    board["Trade Frequency Score"] = board.apply(v33_trade_frequency_score, axis=1)
+    board["Playbook"] = board.apply(v33_setup_playbook, axis=1)
+    board["Bias"] = board.apply(v33_long_short_bias, axis=1)
+
+    min_score = 65 - (frequency_bias * 0.35)
+    board["Daily Trader Qualified"] = board["Trade Frequency Score"] >= min_score
+
+    def action(row):
+        verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
+        signal = str(row.get("Signal", "")).upper()
+        freq = safe_num(row.get("Trade Frequency Score", 0))
+        bias = row.get("Bias", "")
+
+        if "Short Bias" in bias:
+            return "SHORT WATCH"
+        if signal == "TRADE" and "AVOID" not in verdict:
+            return "TRADE NOW / VERIFY CHART"
+        if signal == "SMALL TRADE" and freq >= 55:
+            return "SMALL TRADE / VERIFY CHART"
+        if "WAIT" in verdict:
+            return "WAIT FOR TRIGGER"
+        if freq >= 50:
+            return "WATCH ACTIVE"
+        return "NO TRADE"
+
+    board["V33 Action"] = board.apply(action, axis=1)
+    board = board.sort_values(
+        ["Daily Trader Qualified", "Trade Frequency Score", "Total Opportunity Score"],
+        ascending=[False, False, False],
+    )
+
+    cols = [
+        "Ticker", "Sector", "V33 Action", "Bias", "Playbook", "Tier",
+        "Trade Frequency Score", "Professional Score", "Composite Score",
+        "Total Opportunity Score", "Money Flow Score", "Best Score",
+        "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk",
+        "Reason"
+    ]
+    cols = [c for c in cols if c in board.columns]
+    return board[cols].head(max(candidate_goal, 3))
+
 # ============================================================
 # PACKETS / SUMMARY
 # ============================================================
@@ -2037,7 +2238,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v32")
+    lines.append("TRADER BRIEFING v33")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -2126,7 +2327,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v32 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v33 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -2202,7 +2403,14 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v32")
+st.title("Deon's Trader Dashboard v33")
+
+st.markdown("""
+<div class="v33-hero">
+  <h1>Daily Trader Mode v33</h1>
+  <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls.</p>
+</div>
+""", unsafe_allow_html=True)
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -2269,6 +2477,13 @@ entry_style_setting = st.sidebar.selectbox(
 )
 tranche_count_setting = st.sidebar.slider("Entry tranches", min_value=1, max_value=4, value=4, step=1)
 st.sidebar.caption("Execution engine creates a manual order plan. Broker tab can submit to Alpaca only if configured.")
+
+st.sidebar.subheader("Daily Trader Mode")
+daily_mode = st.sidebar.checkbox("Enable Daily Trader Mode", value=True)
+candidate_goal = st.sidebar.slider("Daily candidate goal", min_value=3, max_value=20, value=8, step=1)
+frequency_bias = st.sidebar.slider("Frequency vs selectivity", min_value=0, max_value=100, value=65, step=5)
+allow_short_watch = st.sidebar.checkbox("Show short-bias watchlist", value=True)
+st.sidebar.caption("Higher frequency increases candidates. Risk rules still control sizing and broker submission.")
 
 st.sidebar.subheader("Temporary Alpaca API Connection")
 st.sidebar.caption("Use this because Streamlit Secrets is not editable right now. These values are not stored permanently.")
@@ -2345,9 +2560,9 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v32.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v32.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v32.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v33.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v33.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v33.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -2437,6 +2652,7 @@ st.dataframe(
 
 tabs = st.tabs([
     "Money Flow Board",
+    "Daily Trader",
     "Trade Plan",
     "Full Packet",
     "Sector Flow",
@@ -2470,7 +2686,7 @@ with tabs[0]:
     st.subheader("Manual Watchlist")
     st.dataframe(scan[scan["Ticker"].isin(manual)], use_container_width=True, height=320)
 
-with tabs[1]:
+with tabs[2]:
     st.header("Trade Plan")
     selected = st.selectbox("Select opportunity", scan["Ticker"].tolist())
     row = scan[scan["Ticker"] == selected].iloc[0]
@@ -2507,12 +2723,12 @@ with tabs[1]:
     st.write(f"Opening Range: **{row['OR Status']} / {row['OR Zone']}**")
     st.write(f"Chart screenshot needed: **{row['Chart Needed']}**")
 
-with tabs[2]:
+with tabs[3]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v32.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v33.json", mime="application/json")
 
-with tabs[3]:
+with tabs[4]:
     st.header("Sector Flow")
     sectors = sector_flow(scan)
     st.dataframe(sectors, use_container_width=True)
@@ -2521,7 +2737,7 @@ with tabs[3]:
         st.subheader(f"Leaders in strongest sector: {leader_sector}")
         st.dataframe(scan[scan["Sector"] == leader_sector].head(5), use_container_width=True)
 
-with tabs[4]:
+with tabs[5]:
     st.header("Engine Scores")
     st.dataframe(
         scan[[
@@ -2533,7 +2749,7 @@ with tabs[4]:
         height=560,
     )
 
-with tabs[5]:
+with tabs[6]:
     st.header("No Trade / Watch")
     no_trade = scan[~scan["Signal"].isin(["TRADE", "SMALL TRADE"])]
     st.dataframe(
@@ -2546,7 +2762,7 @@ with tabs[5]:
         height=500,
     )
 
-with tabs[6]:
+with tabs[7]:
     st.header("Participation Target")
     participation = len(tradeable) / len(scan) * 100 if len(scan) else 0
     x1, x2, x3, x4 = st.columns(4)
@@ -2562,7 +2778,7 @@ with tabs[6]:
     else:
         st.error("Low participation. Conditions are still selective.")
 
-with tabs[7]:
+with tabs[8]:
     st.header("Automated Catalyst Intelligence")
     st.write("Automatic Yahoo Finance news plus manual catalyst entries affect Total Opportunity Score and Catalyst-Adjusted Verdict.")
     st.dataframe(
@@ -2577,7 +2793,7 @@ with tabs[7]:
     st.subheader("How to enter catalysts")
     st.code("CRDO | Raised guidance | Today | earnings beat and raised outlook\nPLTR | Major contract / partnership | Yesterday | defense AI contract\nNVDA | Analyst upgrade | Today | price target raised")
 
-with tabs[8]:
+with tabs[9]:
     st.header("Multi-Source Intelligence")
     st.write("v31 composite score blends technicals, money flow, automated/manual news, sector rotation, and external signals.")
     st.dataframe(
@@ -2594,7 +2810,7 @@ with tabs[8]:
     st.subheader("Scoring weights")
     st.write("Professional Score = 45% Composite + 15% Earnings + 15% Premarket + 10% Learning + 15% Sector Rotation. Composite still blends technicals, money flow, news, sector, and external signals.")
 
-with tabs[9]:
+with tabs[10]:
     st.header("Earnings & Premarket Risk")
     st.write("Use this tab to see event risk and premarket participation. Manual inputs come from the sidebar.")
     st.dataframe(
@@ -2608,7 +2824,7 @@ with tabs[9]:
         height=560,
     )
 
-with tabs[10]:
+with tabs[11]:
     st.header("Trade Outcome Learning")
     st.write("Record closed trades here so the dashboard can learn which setup types are actually working for you.")
     learning_log_current = load_learning_log()
@@ -2657,7 +2873,7 @@ with tabs[10]:
             else:
                 st.error("Ticker, entry, exit, and shares are required.")
 
-with tabs[11]:
+with tabs[12]:
     st.header("Trade Execution Engine")
     st.write("This creates a manual ladder plan. It does not connect to Robinhood or place live orders.")
 
@@ -2702,7 +2918,7 @@ with tabs[11]:
     else:
         st.error(plan["reason"])
 
-with tabs[12]:
+with tabs[13]:
     st.header("Broker Execution — Alpaca")
     st.warning("This tab can place orders only if Alpaca keys are configured. Use paper trading first. This is not a promise of income.")
 
@@ -2829,7 +3045,7 @@ with tabs[12]:
             else:
                 st.error(msg)
 
-with tabs[13]:
+with tabs[14]:
     st.header("Charts")
     default_chart = top_candidate["Ticker"] if top_candidate else scan.iloc[0]["Ticker"]
     tickers = scan["Ticker"].tolist()
@@ -2843,4 +3059,4 @@ with tabs[13]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v32 adds Adaptive Execution: converts ranked setups into valid entry, stop, target, shares, and Alpaca bracket-order ladders.")
+st.caption("v33 adds Daily Trader Mode: more candidates, stronger playbooks, long/short watch, and cleaner graphics.")
