@@ -1198,6 +1198,154 @@ div[data-testid="stTable"] {
 .v35-banner {
     border-top-color: rgba(255,247,214,.20) !important;
 }
+
+
+/* ============================================================
+   V35.9 SHADED PANEL SYSTEM — remove pure-white card surfaces
+   Goal: preserve readability while replacing flat white boxes with
+   warm, dimensional panels that match the navy/teal/gold desk.
+   ============================================================ */
+:root {
+    --v35-panel-cream: #fff6e6;
+    --v35-panel-warm: #f7efe2;
+    --v35-panel-mist: #eaf6f4;
+    --v35-panel-blue: #eaf1fb;
+    --v35-panel-ink: #0b1f33;
+    --v35-panel-border: rgba(15, 118, 110, .20);
+    --v35-panel-border-warm: rgba(201, 122, 64, .22);
+    --v35-panel-shadow: 0 8px 22px rgba(6, 22, 34, .11);
+    --v35-panel-inset: inset 0 1px 0 rgba(255, 255, 255, .58), inset 0 -1px 0 rgba(6, 22, 34, .035);
+}
+
+/* App canvas: slightly warmer so shaded panels do not sit on a cold flat page */
+.stApp {
+    background:
+        radial-gradient(circle at 92% 4%, rgba(212,175,55,.10), transparent 26%),
+        radial-gradient(circle at 8% 2%, rgba(16,185,129,.10), transparent 28%),
+        linear-gradient(180deg, #f8efe0 0%, #eef6f7 42%, #e7f0f2 100%) !important;
+}
+
+/* Global light surfaces: no pure white cards */
+div[data-testid="stMetric"],
+.v34-card,
+.v35-card,
+.v35-status-card,
+.v35-lane-card,
+.v35-command-panel,
+.v357-live-card,
+.v357-dev-card,
+.v356-mini-card,
+.v35-opportunity-tile,
+.v35-tile-trigger,
+[data-testid="stExpander"],
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"] {
+    background:
+        radial-gradient(circle at 88% 8%, rgba(212,175,55,.105), transparent 30%),
+        linear-gradient(180deg, var(--v35-panel-cream) 0%, var(--v35-panel-mist) 100%) !important;
+    border-color: var(--v35-panel-border) !important;
+    box-shadow: var(--v35-panel-shadow), var(--v35-panel-inset) !important;
+}
+
+/* Important command panels get richer shading, not more brightness */
+.v35-command-panel,
+.v357-live-card {
+    background:
+        radial-gradient(circle at 88% 10%, rgba(212,175,55,.13), transparent 31%),
+        linear-gradient(145deg, #fff1d6 0%, #edf7f5 62%, #e6eef8 100%) !important;
+}
+
+/* Top opportunity: warm gold tint without yellow glare */
+.v35-command-panel.gold,
+.v35-opportunity-tile.rank-1,
+.v356-mini-card.gold {
+    background:
+        radial-gradient(circle at 84% 10%, rgba(212,175,55,.25), transparent 32%),
+        linear-gradient(145deg, #fff0c2 0%, #f7ead0 43%, #eaf6f4 100%) !important;
+    border-color: rgba(212,175,55,.46) !important;
+    box-shadow: 0 14px 34px rgba(212,175,55,.18), 0 8px 18px rgba(6,22,34,.10), var(--v35-panel-inset) !important;
+}
+
+/* Pending/probe/action panels: copper-tinted, not warning-yellow */
+.v35-command-panel.copper,
+.v35-mode-PROBE,
+.v35-tile-trigger,
+.v356-mini-card.copper {
+    background:
+        radial-gradient(circle at 86% 10%, rgba(201,122,64,.23), transparent 33%),
+        linear-gradient(145deg, #ffe6cf 0%, #f5eadf 48%, #eaf2f8 100%) !important;
+    border-color: rgba(201,122,64,.38) !important;
+    box-shadow: 0 12px 30px rgba(201,122,64,.15), 0 6px 15px rgba(6,22,34,.10), var(--v35-panel-inset) !important;
+}
+
+/* Mode cards: keep semantic tinting but remove white centers */
+.v35-mode-ATTACK {
+    background: radial-gradient(circle at 86% 8%, rgba(16,185,129,.18), transparent 30%), linear-gradient(160deg, #dcfce7 0%, #eaf7f2 58%, #f8ecd4 100%) !important;
+}
+.v35-mode-TRAIN {
+    background: radial-gradient(circle at 86% 8%, rgba(37,99,235,.16), transparent 30%), linear-gradient(160deg, #e7f0ff 0%, #edf7f5 58%, #f7ead0 100%) !important;
+}
+.v35-mode-PROTECT {
+    background: radial-gradient(circle at 86% 8%, rgba(239,68,68,.15), transparent 30%), linear-gradient(160deg, #fee2e2 0%, #f4ebe5 58%, #e6eef8 100%) !important;
+}
+
+/* Tables sit inside shaded frames while their internal grid remains readable */
+div[data-testid="stDataFrame"] iframe,
+div[data-testid="stTable"] table {
+    background: transparent !important;
+}
+
+/* Inputs and text areas: soft parchment/mist instead of stark white */
+input,
+textarea,
+div[data-baseweb="select"] > div {
+    background: linear-gradient(180deg, #fff6e6 0%, #eef7f5 100%) !important;
+    border-color: rgba(201,122,64,.22) !important;
+    box-shadow: 0 4px 11px rgba(6,22,34,.085), inset 0 1px 0 rgba(255,255,255,.62) !important;
+}
+
+/* Buttons keep their premium raised feel but lose the white plastic look */
+.stButton button,
+.stDownloadButton button,
+button[kind="secondary"],
+button[kind="primary"] {
+    background: linear-gradient(180deg, #fff0cf 0%, #eaf6f4 100%) !important;
+    border-color: rgba(201,122,64,.28) !important;
+    color: #061622 !important;
+}
+.stButton button:hover,
+.stDownloadButton button:hover,
+button[kind="secondary"]:hover,
+button[kind="primary"]:hover {
+    background: linear-gradient(180deg, #ffe4ad 0%, #dff4ef 100%) !important;
+}
+
+/* Expander headers should feel like tucked-away panels, not white accordions */
+[data-testid="stExpander"] summary {
+    background: linear-gradient(90deg, rgba(255,240,207,.72), rgba(234,246,244,.72)) !important;
+    border-radius: 14px !important;
+}
+
+/* Data download / text packet areas in developer mode stay readable but visually secondary */
+.stTextArea textarea {
+    background: linear-gradient(180deg, #f9efd9 0%, #eaf4f3 100%) !important;
+    color: #0f172a !important;
+}
+
+/* Sidebar input exception: keep dark-sidebar controls readable with warm tint */
+section[data-testid="stSidebar"] textarea,
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+    background: linear-gradient(180deg, #fff0cf 0%, #edf7f5 100%) !important;
+    color: #061622 !important;
+}
+
+/* Plotly chart area warmer, so charts no longer look pasted onto a white canvas */
+.js-plotly-plot .plotly,
+.js-plotly-plot .main-svg {
+    border-radius: 18px !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -4285,7 +4433,7 @@ def make_chart(ticker, timeframe):
         height=550,
         xaxis_rangeslider_visible=False,
         paper_bgcolor="rgba(248,250,252,0)",
-        plot_bgcolor="rgba(255,255,255,.86)",
+        plot_bgcolor="rgba(248,239,224,.92)",
         font=dict(color="#061622", family="Inter, sans-serif"),
         margin=dict(l=20, r=20, t=35, b=20),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
