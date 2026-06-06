@@ -9,7 +9,7 @@ import yfinance as yf
 import requests
 
 st.set_page_config(
-    page_title="Deon's Trader Dashboard v33",
+    page_title="Deon's Trader Dashboard v34",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -17,56 +17,305 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.block-container { padding-top: 1.6rem; padding-bottom: 3rem; }
-div[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-    border: 1px solid rgba(148,163,184,.35);
-    padding: 16px 18px;
-    border-radius: 18px;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, .06);
+/* ============================================================
+   V34 VISUAL SYSTEM
+   Palette based on user's preferred hero screenshot:
+   midnight teal -> deep emerald -> electric blue
+   ============================================================ */
+
+:root {
+    --v34-navy: #061622;
+    --v34-teal-dark: #083344;
+    --v34-teal: #0f766e;
+    --v34-emerald: #10b981;
+    --v34-blue: #2563eb;
+    --v34-blue2: #1d4ed8;
+    --v34-cyan: #38bdf8;
+    --v34-slate: #334155;
+    --v34-soft: #f8fafc;
+    --v34-border: rgba(15, 118, 110, 0.22);
+    --v34-shadow: 0 20px 48px rgba(6, 22, 34, .16);
 }
-div[data-testid="stMetricLabel"] { color: #64748b; font-weight: 800; }
-div[data-testid="stMetricValue"] { font-weight: 900; }
-.v33-hero {
-    padding: 24px 28px;
-    border-radius: 24px;
-    background: linear-gradient(135deg, #111827 0%, #0f766e 55%, #2563eb 100%);
+
+html, body, [class*="css"] {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, .12), transparent 34%),
+        radial-gradient(circle at top left, rgba(16, 185, 129, .09), transparent 28%),
+        linear-gradient(180deg, #f8fafc 0%, #eef6f7 100%);
+}
+
+.block-container {
+    padding-top: 1.65rem;
+    padding-bottom: 3rem;
+    max-width: 1500px;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #061622 0%, #083344 52%, #0f766e 100%);
+    border-right: 1px solid rgba(255,255,255,.10);
+}
+
+section[data-testid="stSidebar"] * {
+    color: rgba(255,255,255,.93) !important;
+}
+
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] .stCaption,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+    color: rgba(255,255,255,.78) !important;
+}
+
+section[data-testid="stSidebar"] textarea,
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] select,
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+    background: rgba(255,255,255,.94) !important;
+    color: #061622 !important;
+    border: 1px solid rgba(255,255,255,.25) !important;
+    border-radius: 12px !important;
+}
+
+section[data-testid="stSidebar"] textarea,
+section[data-testid="stSidebar"] input {
+    color: #061622 !important;
+}
+
+section[data-testid="stSidebar"] button {
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,.25) !important;
+    background: rgba(255,255,255,.10) !important;
+    color: white !important;
+}
+
+/* Main title */
+h1, h2, h3 {
+    letter-spacing: -0.045em;
+}
+
+h1 {
+    color: #061622;
+    font-weight: 950 !important;
+}
+
+/* Hero */
+.v34-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 30px 34px;
+    border-radius: 26px;
+    background:
+        radial-gradient(circle at 14% 12%, rgba(56, 189, 248, .16), transparent 26%),
+        radial-gradient(circle at 76% 18%, rgba(16, 185, 129, .14), transparent 30%),
+        linear-gradient(120deg, #061622 0%, #083344 31%, #0f766e 62%, #2563eb 100%);
     color: white;
-    box-shadow: 0 20px 45px rgba(15, 23, 42, .22);
-    margin-bottom: 20px;
+    box-shadow: 0 28px 60px rgba(6, 22, 34, .28);
+    margin-bottom: 22px;
+    border: 1px solid rgba(255,255,255,.14);
 }
-.v33-hero h1 { margin: 0; font-size: 2.35rem; letter-spacing: -0.04em; }
-.v33-hero p { margin: 8px 0 0 0; color: rgba(255,255,255,.86); font-size: 1rem; }
-.v33-card {
-    border: 1px solid rgba(148,163,184,.25);
-    border-radius: 18px;
-    padding: 16px 18px;
-    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
-    box-shadow: 0 10px 30px rgba(15, 23, 42, .06);
-    margin-bottom: 14px;
+
+.v34-hero:after {
+    content: "";
+    position: absolute;
+    width: 420px;
+    height: 420px;
+    right: -150px;
+    top: -210px;
+    background: radial-gradient(circle, rgba(255,255,255,.20), transparent 62%);
+    transform: rotate(20deg);
 }
-.v33-pill {
-    display: inline-block;
-    padding: 6px 12px;
+
+.v34-hero h1 {
+    position: relative;
+    margin: 0;
+    color: white !important;
+    font-size: clamp(2rem, 3vw, 3rem);
+    font-weight: 950;
+    letter-spacing: -0.055em;
+}
+
+.v34-hero p {
+    position: relative;
+    margin: 10px 0 0 0;
+    color: rgba(255,255,255,.86);
+    font-size: 1.02rem;
+    font-weight: 550;
+}
+
+.v34-hero-row {
+    position: relative;
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.v34-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 12px;
     border-radius: 999px;
-    font-weight: 800;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.18);
+    color: white;
+    font-size: .82rem;
+    font-weight: 850;
+    backdrop-filter: blur(8px);
+}
+
+/* Metrics */
+div[data-testid="stMetric"] {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96)),
+        linear-gradient(135deg, rgba(15,118,110,.08), rgba(37,99,235,.07));
+    border: 1px solid var(--v34-border);
+    padding: 18px 18px;
+    border-radius: 20px;
+    box-shadow: 0 14px 32px rgba(6, 22, 34, .08);
+}
+
+div[data-testid="stMetric"]::before {
+    content: "";
+    display: block;
+    height: 4px;
+    margin: -18px -18px 14px -18px;
+    border-radius: 20px 20px 0 0;
+    background: linear-gradient(90deg, #083344, #0f766e, #2563eb);
+}
+
+div[data-testid="stMetricLabel"] {
+    color: #64748b;
+    font-weight: 900;
+}
+
+div[data-testid="stMetricValue"] {
+    color: #061622;
+    font-weight: 950;
+}
+
+/* Alerts */
+div[data-testid="stAlert"] {
+    border-radius: 18px;
+    border-width: 1px;
+    box-shadow: 0 10px 28px rgba(6, 22, 34, .06);
+}
+
+/* Tabs */
+button[data-baseweb="tab"] {
+    border-radius: 999px !important;
+    margin-right: 6px !important;
+    padding: 9px 14px !important;
+    background: rgba(255,255,255,.72) !important;
+    border: 1px solid rgba(15,118,110,.16) !important;
+    color: #0f172a !important;
+    font-weight: 850 !important;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #083344, #0f766e, #2563eb) !important;
+    color: white !important;
+    box-shadow: 0 10px 24px rgba(15,118,110,.24);
+}
+
+/* Tables */
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"] {
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid rgba(15,118,110,.16);
+    box-shadow: 0 12px 30px rgba(6, 22, 34, .06);
+}
+
+/* Inputs */
+div[data-baseweb="select"] > div,
+input,
+textarea {
+    border-radius: 14px !important;
+    border-color: rgba(15,118,110,.22) !important;
+}
+
+/* Buttons */
+.stButton button,
+.stDownloadButton button,
+button[kind="secondary"],
+button[kind="primary"] {
+    border-radius: 14px !important;
+    font-weight: 900 !important;
+    border: 1px solid rgba(15,118,110,.20) !important;
+    box-shadow: 0 8px 18px rgba(6, 22, 34, .08);
+}
+
+.stButton button:hover,
+.stDownloadButton button:hover {
+    border-color: rgba(37,99,235,.42) !important;
+    box-shadow: 0 12px 26px rgba(37,99,235,.14);
+}
+
+/* Cards and badges */
+.v34-card {
+    border: 1px solid rgba(15,118,110,.22);
+    border-radius: 22px;
+    padding: 18px 20px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96));
+    box-shadow: 0 16px 38px rgba(6, 22, 34, .07);
+    margin-bottom: 16px;
+}
+
+.v34-card-dark {
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 22px;
+    padding: 18px 20px;
+    background: linear-gradient(135deg, #061622 0%, #083344 48%, #0f766e 100%);
+    color: white;
+    box-shadow: var(--v34-shadow);
+    margin-bottom: 16px;
+}
+
+.v34-section-title {
+    font-size: 1.35rem;
+    font-weight: 950;
+    margin-top: 22px;
+    margin-bottom: 12px;
+    letter-spacing: -0.045em;
+    color: #061622;
+}
+
+.v34-pill {
+    display: inline-block;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-weight: 900;
     font-size: .78rem;
     letter-spacing: .02em;
     margin-right: 8px;
+    border: 1px solid transparent;
 }
-.pill-green { background: #dcfce7; color: #166534; }
-.pill-yellow { background: #fef3c7; color: #92400e; }
-.pill-red { background: #fee2e2; color: #991b1b; }
-.pill-blue { background: #dbeafe; color: #1e40af; }
-.pill-purple { background: #ede9fe; color: #5b21b6; }
-.v33-section-title {
-    font-size: 1.35rem;
-    font-weight: 900;
-    margin-top: 20px;
-    margin-bottom: 10px;
-    letter-spacing: -0.03em;
+
+.pill-green { background: #dcfce7; color: #166534; border-color: rgba(22,101,52,.10); }
+.pill-yellow { background: #fef3c7; color: #92400e; border-color: rgba(146,64,14,.12); }
+.pill-red { background: #fee2e2; color: #991b1b; border-color: rgba(153,27,27,.12); }
+.pill-blue { background: #dbeafe; color: #1e40af; border-color: rgba(30,64,175,.12); }
+.pill-purple { background: #ede9fe; color: #5b21b6; border-color: rgba(91,33,182,.12); }
+.pill-dark { background: #061622; color: white; border-color: rgba(255,255,255,.12); }
+
+.small-muted {
+    color: #64748b;
+    font-size: .88rem;
+    font-weight: 650;
 }
-.small-muted { color: #64748b; font-size: .88rem; }
+
+hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(15,118,110,.30), transparent);
+    margin: 1.2rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,7 +333,7 @@ div[data-testid="stMetricValue"] { font-weight: 900; }
 # - Chart screenshot only when a setup is close.
 # ============================================================
 
-st.set_page_config(page_title="Deon's Trader Dashboard v33", layout="wide")
+st.set_page_config(page_title="Deon's Trader Dashboard v34", layout="wide")
 
 MARKETS = ["SPY", "QQQ", "^VIX", "^TNX"]
 
@@ -1581,7 +1830,7 @@ def adaptive_execution_style(row):
 
 def ensure_trade_plan_fields(row, cash, risk_pct):
     """
-    v33 repair layer:
+    v34 repair layer:
     If the broker engine receives a ranked row with missing/zero shares, stop, or targets,
     create a conservative executable plan from price, setup strength, and risk settings.
     """
@@ -1656,7 +1905,7 @@ def ensure_trade_plan_fields(row, cash, risk_pct):
 def build_ladder_plan(row, cash, risk_pct, entry_style="Pullback ladder", tranches=4):
     """
     Creates an execution plan and broker-ready ladder.
-    v33 repairs missing trade-plan fields and supports Adaptive execution.
+    v34 repairs missing trade-plan fields and supports Adaptive execution.
     """
     if entry_style == "Adaptive":
         entry_style = adaptive_execution_style(row)
@@ -1838,7 +2087,7 @@ def execution_packet(row, ladder_plan):
 
     s = ladder_plan["summary"]
     lines = []
-    lines.append("TRADE EXECUTION ENGINE v33")
+    lines.append("TRADE EXECUTION ENGINE v34")
     lines.append(f"Ticker: {s['Ticker']}")
     lines.append(f"Entry style: {s['Entry Style']}")
     lines.append(f"Reference entry: {s['Reference Entry']}")
@@ -2037,10 +2286,10 @@ def broker_safety_check(ladder_plan, cash, max_order_value, max_total_risk):
 
 
 # ============================================================
-# V33 DAILY TRADER MODE
+# V34 DAILY TRADER MODE
 # ============================================================
 
-def v33_trade_frequency_score(row):
+def v34_trade_frequency_score(row):
     score = 0
     signal = str(row.get("Signal", "")).upper()
     verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
@@ -2089,7 +2338,7 @@ def v33_trade_frequency_score(row):
     return round(score, 1)
 
 
-def v33_setup_playbook(row):
+def v34_setup_playbook(row):
     setup = str(row.get("Best Setup", "")).upper()
     reason = str(row.get("Reason", "")).upper()
     above_vwap = bool(row.get("Above VWAP", False))
@@ -2108,7 +2357,7 @@ def v33_setup_playbook(row):
     return "First Pullback / Watch"
 
 
-def v33_long_short_bias(row):
+def v34_long_short_bias(row):
     signal = str(row.get("Signal", "")).upper()
     verdict = str(row.get("Professional Verdict", row.get("Composite Verdict", ""))).upper()
     gap = safe_num(row.get("Gap %", 0))
@@ -2127,14 +2376,14 @@ def v33_long_short_bias(row):
     return "Neutral / Watch"
 
 
-def v33_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=65):
+def v34_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=65):
     if scan_df is None or len(scan_df) == 0:
         return pd.DataFrame()
 
     board = scan_df.copy()
-    board["Trade Frequency Score"] = board.apply(v33_trade_frequency_score, axis=1)
-    board["Playbook"] = board.apply(v33_setup_playbook, axis=1)
-    board["Bias"] = board.apply(v33_long_short_bias, axis=1)
+    board["Trade Frequency Score"] = board.apply(v34_trade_frequency_score, axis=1)
+    board["Playbook"] = board.apply(v34_setup_playbook, axis=1)
+    board["Bias"] = board.apply(v34_long_short_bias, axis=1)
 
     min_score = 65 - (frequency_bias * 0.35)
     board["Daily Trader Qualified"] = board["Trade Frequency Score"] >= min_score
@@ -2157,14 +2406,14 @@ def v33_build_daily_opportunity_board(scan_df, candidate_goal=8, frequency_bias=
             return "WATCH ACTIVE"
         return "NO TRADE"
 
-    board["V33 Action"] = board.apply(action, axis=1)
+    board["V34 Action"] = board.apply(action, axis=1)
     board = board.sort_values(
         ["Daily Trader Qualified", "Trade Frequency Score", "Total Opportunity Score"],
         ascending=[False, False, False],
     )
 
     cols = [
-        "Ticker", "Sector", "V33 Action", "Bias", "Playbook", "Tier",
+        "Ticker", "Sector", "V34 Action", "Bias", "Playbook", "Tier",
         "Trade Frequency Score", "Professional Score", "Composite Score",
         "Total Opportunity Score", "Money Flow Score", "Best Score",
         "Price", "Stop", "Target 1", "Shares", "Position $", "Dollar Risk",
@@ -2238,7 +2487,7 @@ def make_trader_briefing(snapshot):
     top_flow = snapshot["top_flow_name"]
 
     lines = []
-    lines.append("TRADER BRIEFING v33")
+    lines.append("TRADER BRIEFING v34")
     lines.append(f"Time: {snapshot['timestamp']}")
     lines.append(f"Market: {m['light']} {m['score']}/100 - {m['regime']}")
     lines.append(f"Market reason: {m['reason']}")
@@ -2327,7 +2576,7 @@ def make_trader_briefing(snapshot):
 
 def make_full_packet(snapshot):
     lines = []
-    lines.append("DEON TRADER DASHBOARD v33 - FULL DECISION PACKET")
+    lines.append("DEON TRADER DASHBOARD v34 - FULL DECISION PACKET")
     lines.append(f"Timestamp: {snapshot['timestamp']}")
     m = snapshot["market"]
     lines.append("")
@@ -2403,14 +2652,30 @@ def make_chart(ticker, timeframe):
 # APP
 # ============================================================
 
-st.title("Deon's Trader Dashboard v33")
+st.title("Deon's Trader Dashboard v34")
 
 st.markdown("""
-<div class="v33-hero">
-  <h1>Daily Trader Mode v33</h1>
-  <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls.</p>
+<div class="v34-hero">
+  <h1>Daily Trader Mode v34</h1>
+  <p>Scanner → Opportunity Board → Execution Board. More daily candidates, same hard risk controls, sharper visual read.</p>
+  <div class="v34-hero-row">
+    <span class="v34-chip">⚡ Daily Setup Engine</span>
+    <span class="v34-chip">🛡️ Risk Locked</span>
+    <span class="v34-chip">📈 Alpaca Ready</span>
+    <span class="v34-chip">🎯 Robinhood Mirror</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
+
+st.markdown("""
+<div class="v34-card-dark">
+  <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:center;">
+    <div style="font-size:1.05rem; font-weight:950;">Trade Desk View</div>
+    <div style="opacity:.85;">Use the dashboard to generate candidates, verify the chart, then mirror Robinhood real trade with Alpaca paper.</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.sidebar.header("Settings")
@@ -2560,9 +2825,9 @@ st.caption(f"Auto-news scanned: {len(auto_news_hits)} tickers | Manual overrides
 st.text_area("Trader Briefing for ChatGPT", briefing, height=430)
 
 c1, c2, c3 = st.columns(3)
-c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v33.txt", mime="text/plain")
-c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v33.txt", mime="text/plain")
-c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v33.csv", mime="text/csv")
+c1.download_button("Download Trader Briefing TXT", data=briefing.encode("utf-8"), file_name="trader_briefing_v34.txt", mime="text/plain")
+c2.download_button("Download Full Packet TXT", data=full_packet.encode("utf-8"), file_name="full_decision_packet_v34.txt", mime="text/plain")
+c3.download_button("Download Top 10 CSV", data=df_csv(scan.head(10)), file_name="top10_v34.csv", mime="text/csv")
 
 st.header("Step 2 — Dashboard's Preliminary Answer")
 top_candidate = snapshot["top_candidate"]
@@ -2726,7 +2991,7 @@ with tabs[2]:
 with tabs[3]:
     st.header("Full Decision Packet")
     st.text_area("Full Packet for Deep Review", full_packet, height=560)
-    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v33.json", mime="application/json")
+    st.download_button("Download Snapshot JSON", data=json.dumps(snapshot, indent=2, default=str).encode("utf-8"), file_name="snapshot_v34.json", mime="application/json")
 
 with tabs[4]:
     st.header("Sector Flow")
@@ -3059,4 +3324,4 @@ with tabs[14]:
     else:
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("v33 adds Daily Trader Mode: more candidates, stronger playbooks, long/short watch, and cleaner graphics.")
+st.caption("v34 adds a full trade-desk visual refresh using the dark-teal, emerald, and blue theme.")
